@@ -19,7 +19,7 @@ function prep(g) {
  * Merge parts, jitter vertices (same position → same offset, so no cracks),
  * recompute flat normals, and bake a vertical AO gradient into vertex colours.
  */
-function finish(parts, { jitter = 0, shade = [0.6, 1.12], moss = 0, rings = 0, seed = 1 } = {}) {
+function finish(parts, { jitter = 0, shade = [0.6, 1.12], moss = 0, rings = 0, marks = 0, seed = 1 } = {}) {
   const g = mergeGeometries(parts.map(prep));
   const p = g.attributes.position, n = p.count;
   let y0 = Infinity, y1 = -Infinity;
@@ -40,6 +40,10 @@ function finish(parts, { jitter = 0, shade = [0.6, 1.12], moss = 0, rings = 0, s
     const y = p.getY(i), t = (y - y0) / Math.max(1e-3, y1 - y0), ny = nrm.getY(i);
     let c = shade[0] + (shade[1] - shade[0]) * Math.pow(t, 0.8) + ny * 0.08;
     if (rings) c *= 0.86 + 0.14 * (Math.sin(y * rings) > 0 ? 1 : 0);
+    if (marks) { // birch bark: dark horizontal lenticels scattered around the trunk
+      const ang = Math.atan2(p.getZ(i), p.getX(i));
+      if (hash3(Math.round(y * 2.4), Math.round(ang * 1.2), 9) > 0.72) c *= 0.3;
+    }
     let r = c, gg = c, b = c;
     if (moss) { const m = moss * sstep(0.45, 0.85, ny); r *= 1 - 0.38 * m; gg *= 1 + 0.06 * m; b *= 1 - 0.45 * m; }
     col[i * 3] = r; col[i * 3 + 1] = gg; col[i * 3 + 2] = b;
@@ -62,6 +66,29 @@ function trunk(h, r0, r1, { bend = 0, flare = 1.3, seg = 6, hs = 4 } = {}) {
 const lobe = (r, x, y, z, sy = 1) => new THREE.IcosahedronGeometry(r, 0).scale(1, sy, 1).translate(x, y, z);
 const branch = (len, r, tiltZ, rotY, y) =>
   new THREE.CylinderGeometry(r * 0.6, r, len, 5).translate(0, len / 2, 0).rotateZ(tiltZ).rotateY(rotY).translate(0, y, 0);
+
+/** willow curtains: long ribbons hanging from the crown's rim, bulging out a little */
+function strands(cx, cy, count = 34) {
+  const pos = [];
+  for (let k = 0; k < count; k++) {
+    const a = (k / count) * Math.PI * 2 + hash2(k, 11) * 0.3, ca = Math.cos(a), sa = Math.sin(a);
+    const rad = 1.4 + hash2(k, 12) * 1.5, top = cy + 0.5 - rad * 0.25;
+    const bottom = Math.max(0.5, top - (2.4 + hash2(k, 13) * 1.4)), w0 = 0.34;
+    const ring = [];
+    for (let s = 0; s <= 4; s++) {
+      const t = s / 4, y = top - (top - bottom) * t, out = rad + 0.35 * Math.sin(t * Math.PI * 0.7), w = w0 * (1 - 0.55 * t);
+      const x = cx + ca * out, z = sa * out;
+      ring.push([[x + sa * w, y, z - ca * w], [x - sa * w, y, z + ca * w]]);
+    }
+    for (let s = 0; s < 4; s++) {
+      const [a0, b0] = ring[s], [a1, b1] = ring[s + 1];
+      pos.push(...a0, ...b0, ...a1, ...b0, ...b1, ...a1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  return g;
+}
 
 /** palm fronds: arched, tapering leaves with a slight V fold */
 function fronds(tx, ty, count = 8, L = 2.9) {
@@ -141,5 +168,29 @@ export function buildModels() {
 
   const rock = finish([new THREE.DodecahedronGeometry(1, 1)], { jitter: 0.16, shade: [0.62, 1.08], moss: 0.8, seed: 6 });
 
-  return { broadTrunk, broadCrown, pineTrunk, pineLeaves, jungTrunk, jungCrown, palmTrunk, palmFronds, bush, cactus, rock };
+  // birch: slender white trunk with dark marks, airy crown of small lobes
+  const bh = 6.2, bbend = 0.04, bxAt = (y) => bbend * (y / bh) ** 2 * bh;
+  const birchTrunk = finish([
+    trunk(bh, 0.18, 0.07, { bend: bbend, flare: 1.3, seg: 7, hs: 9 }),
+    branch(1.2, 0.05, -0.9, 0.3, 3.4), branch(1.0, 0.045, 0.85, 2.2, 4.1), branch(0.9, 0.04, -0.8, 4.0, 4.8),
+  ], { shade: [0.72, 1.05], marks: 1 });
+  const birchLobes = [];
+  for (let k = 0; k < 11; k++) {
+    const a = k * 2.4, rr = 0.35 + 0.85 * hash2(k, 21), y = 3.7 + 2.5 * hash2(k, 22);
+    birchLobes.push(lobe(0.55 + 0.35 * hash2(k, 23), bxAt(y) + Math.cos(a) * rr, y, Math.sin(a) * rr, 0.9));
+  }
+  const birchCrown = finish(birchLobes, { jitter: 0.12, shade: [0.58, 1.16], seed: 8 });
+
+  // willow: thick leaning trunk, low dome and hanging curtains
+  const wh = 3.0, wb = 0.18, wtx = wb * wh;
+  const willowTrunk = finish([
+    trunk(wh, 0.55, 0.3, { bend: wb, flare: 1.8 }),
+    branch(1.6, 0.15, -0.8, 0.5, 2.4), branch(1.5, 0.14, 0.8, 2.6, 2.6), branch(1.4, 0.13, -0.7, 4.4, 2.5),
+  ], { shade: [0.5, 1.0] });
+  const willowDome = finish([
+    lobe(2.2, wtx, 4.3, 0, 0.6), lobe(1.6, wtx + 1.3, 4.0, 0.5, 0.6), lobe(1.6, wtx - 1.2, 4.1, -0.6, 0.6), lobe(1.4, wtx + 0.2, 4.7, -1.1, 0.6),
+  ], { jitter: 0.15, shade: [0.5, 1.05], seed: 7 });
+  const willowCurtain = finish([strands(wtx, 4.3)], { shade: [0.5, 1.1] });
+
+  return { birchTrunk, birchCrown, willowTrunk, willowDome, willowCurtain, broadTrunk, broadCrown, pineTrunk, pineLeaves, jungTrunk, jungCrown, palmTrunk, palmFronds, bush, cactus, rock };
 }

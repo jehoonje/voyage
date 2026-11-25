@@ -9,13 +9,15 @@ import { CHOPPABLE, felled, poseTree } from './forestry.js';
 export const CHUNK = 48;
 const SEG = 16, RADIUS = 3, STEP = CHUNK / SEG, VEG_GRID = 4;
 /** trunk radius per type, before instance scale */
-const TRUNK_R = { pine: 0.3, broad: 0.36, jungle: 0.5, palm: 0.26, cactus: 0.42 };
+const TRUNK_R = { pine: 0.3, broad: 0.36, jungle: 0.5, palm: 0.26, cactus: 0.42, birch: 0.17, willow: 0.5 };
 /** [centre height, radius] spheres approximating each tree type, before instance scale */
 const OCCLUDERS = {
   pine: [[1.2, 0.45], [3.0, 1.8], [4.8, 1.3], [6.2, 0.8]],
   broad: [[1.2, 0.5], [3.8, 2.0]],
   jungle: [[2, 0.6], [4.5, 0.6], [7.4, 3.0]],
   palm: [[2.5, 0.4], [5.3, 2.4]],
+  birch: [[1.6, 0.3], [4.9, 1.6]],
+  willow: [[1.3, 0.6], [3.6, 2.7]],
 };
 
 export class ChunkManager {

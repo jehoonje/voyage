@@ -198,7 +198,7 @@ export function createGrass(scene) {
       const dry = sstep(0.25, 0.6, vnoise(x * 0.035 + 7, z * 0.035 - 3)) * 0.55 * (biome(s) === 'meadow' ? 1 : 0.4);
       const v = 0.9 + jx * 0.2;
       for (let k = 0; k < 3; k++) out[k] = (tmp[k] + (DRY[k] - tmp[k]) * dry) * v * (k === 2 ? 0.9 : 1);
-      return 0.75 + r * 0.6;
+      return (0.75 + r * 0.6) * (biome(s) === 'meadow' ? 1.25 : 1); // meadows grow tall
     },
   });
   const flowers = createField(scene, {

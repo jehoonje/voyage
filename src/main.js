@@ -16,6 +16,7 @@ import { createForestry } from './forestry.js';
 import { createActions } from './actions.js';
 import { createInventory } from './inventory.js';
 import { createPhysics, WALK, SWIM_Y } from './physics.js';
+import { createPost } from './post.js';
 
 // Keep the authored (non-linear) colours looking as designed.
 THREE.ColorManagement.enabled = false;
@@ -28,13 +29,17 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, 320);
+let post = null;
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  if (post) post.resize();
 }
 addEventListener('resize', resize);
 resize();
+post = createPost(renderer);
+const draw = (now) => post.render(scene, camera, now / 1000, env.light.dusk, env.light.night);
 
 const env = createEnvironment(scene);
 const world = new ChunkManager(scene);
@@ -102,7 +107,7 @@ function step(now) {
   requestAnimationFrame(step);
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  if (!started) { renderer.render(scene, camera); return; }
+  if (!started) { draw(now); return; }
 
   // movement relative to camera
   const inp = input.read();
@@ -160,7 +165,7 @@ function step(now) {
   if ((ctxTimer -= dt) <= 0) { ctxTimer = 0.15; refreshContext(); }
   progress.explore(P.x, P.z);
   if (map.open && mag > 0) map.request();
-  renderer.render(scene, camera);
+  draw(now);
 }
 
 function begin(cont) {
@@ -210,5 +215,6 @@ addEventListener('pagehide', saveAll);
   world.update(x, z, true);
   camera.position.set(x + 30, h + 28, z + 40);
   camera.lookAt(x, h + 4, z);
+  env.update(0, 0, x, z, h, camera);
 }
 requestAnimationFrame(step);
