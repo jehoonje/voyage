@@ -4,7 +4,9 @@ import { clamp, mix } from './noise.js';
 import { sample, biome } from './world.js';
 import { ChunkManager } from './chunks.js';
 import { createEnvironment } from './sky.js';
-import { createHero } from './hero.js';
+import { createCharacter, loadSpec } from './character/character.js';
+import { DEFAULT_SPEC } from './character/parts.js';
+import { createCreator } from './creator.js';
 import { createInput } from './input.js';
 import { createProgress } from './progress.js';
 import { createMap } from './map.js';
@@ -43,7 +45,9 @@ const draw = (now) => post.render(scene, camera, now / 1000, env.light.dusk, env
 
 const env = createEnvironment(scene);
 const world = new ChunkManager(scene);
-const hero = createHero(scene);
+const hero = createCharacter(scene);
+const savedSpec = loadSpec();
+hero.apply(savedSpec || DEFAULT_SPEC).catch(() => { /* retried when the creator opens */ });
 const progress = createProgress();
 const grass = createGrass(scene);
 const fx = createFx(scene);
@@ -107,6 +111,7 @@ function step(now) {
   requestAnimationFrame(step);
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  if (creator.active) { creator.frame(dt); return; }
   if (!started) { draw(now); return; }
 
   // movement relative to camera
@@ -139,14 +144,14 @@ function step(now) {
 
   // third-person camera, kept above terrain
   // trees between hero and camera dissolve (see forestry.occlude)
-  const headY = P.y + 1.6;
+  const headY = P.y + 1.3;
   const ox = Math.sin(cam.yaw) * Math.cos(cam.pitch), oy = Math.sin(cam.pitch), oz = Math.cos(cam.yaw) * Math.cos(cam.pitch);
   forestry.occlude(dt, P.x, headY, P.z, P.x + ox * (cam.dist + 1), headY + oy * (cam.dist + 1), P.z + oz * (cam.dist + 1));
   cam.cur = cam.dist;
   const cx = P.x + ox * cam.cur, cz = P.z + oz * cam.cur;
   const cy = Math.max(headY + oy * cam.cur, Math.max(sample(cx, cz).h, 0) + 1.2);
   camera.position.set(cx, cy, cz);
-  camera.lookAt(P.x, P.y + 1.6, P.z);
+  camera.lookAt(P.x, headY, P.z);
   camera.updateMatrixWorld();
 
   world.update(P.x, P.z);
@@ -196,10 +201,26 @@ function updateDayNight(dt) {
 }
 const TIME_KEY = 'mjdr-time';
 
-const contBtn = document.getElementById('goCont');
-contBtn.hidden = !progress.hasSave();
-document.getElementById('goNew').addEventListener('click', () => begin(false));
-contBtn.addEventListener('click', () => begin(true));
+const contBtn = document.getElementById('goCont'), editBtn = document.getElementById('goEdit'), startEl = document.getElementById('start');
+contBtn.hidden = editBtn.hidden = !progress.hasSave();
+let pendingCont = false;
+const creator = createCreator({ renderer, hero, onDone: () => { resize(); begin(pendingCont); } });
+function openCreator(cont) {
+  pendingCont = cont;
+  startEl.hidden = true;
+  creator.open(hero.spec || loadSpec() || DEFAULT_SPEC);
+}
+document.getElementById('goNew').addEventListener('click', () => openCreator(false));
+editBtn.addEventListener('click', () => openCreator(true));
+contBtn.addEventListener('click', async () => {
+  if (!loadSpec()) { openCreator(true); return; } // saved before characters existed
+  if (!hero.ready) {
+    contBtn.disabled = true; contBtn.textContent = '캐릭터 준비 중…';
+    while (!hero.ready) await new Promise((r) => setTimeout(r, 100));
+    contBtn.disabled = false; contBtn.textContent = '이어서 탐험';
+  }
+  begin(true);
+});
 
 function saveAll() {
   if (!started) return;

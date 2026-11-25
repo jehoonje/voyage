@@ -115,3 +115,53 @@ body.busy #joy,body.busy #runBtn,body.busy #jumpBtn,body.busy #campBtn{opacity:.
 #pickup.on{animation:pick 1.4s ease-out forwards}
 @keyframes pick{0%{opacity:0;transform:translate(-50%,10px)}15%{opacity:1;transform:translate(-50%,0)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-14px)}}
 @media (prefers-reduced-motion:reduce){#pickup.on{animation:none;opacity:1}}
+
+/* start card: secondary text link */
+.link{display:block;margin:12px auto 0;background:none;border:0;color:var(--ink-dim);font-family:var(--ui);font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:6px}
+
+/* character creator: live preview above (or beside) a panel of part tabs */
+#creator{position:fixed;inset:0;z-index:31;--panel-h:min(58vh,520px)}
+#crStage{position:absolute;left:0;right:0;top:0;bottom:var(--panel-h);touch-action:none;cursor:grab}
+#crStage:active{cursor:grabbing}
+#crMotion{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--panel-h) + 10px);display:flex;gap:4px;
+  background:rgba(28,32,30,.5);border-radius:999px;padding:4px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#crMotion button{border:0;background:none;color:#f3ead6;font-family:var(--ui);font-size:13px;height:32px;padding:0 12px;border-radius:999px;cursor:pointer}
+#crMotion button[aria-pressed="true"]{background:rgba(243,234,214,.92);color:#2a2418}
+#crBusy{position:absolute;left:50%;top:calc(12px + env(safe-area-inset-top,0px));transform:translateX(-50%);background:rgba(28,32,30,.7);
+  color:#f3ead6;font-size:13px;padding:7px 14px;border-radius:999px;max-width:80vw}
+#crPanel{position:absolute;left:0;right:0;bottom:0;height:var(--panel-h);display:flex;flex-direction:column;
+  background:rgba(22,26,28,.9);border-top:1px solid var(--panel-line);border-radius:18px 18px 0 0;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.cr-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 6px}
+.cr-head h2{margin:0;font-family:var(--display);font-size:20px}
+#crRandom{height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--panel-line);background:transparent;color:var(--ink);font-family:var(--ui);font-size:13px;cursor:pointer}
+#crTabs{display:flex;gap:2px;overflow-x:auto;padding:0 10px;border-bottom:1px solid rgba(240,226,190,.12);scrollbar-width:none;flex:none}
+#crTabs::-webkit-scrollbar{display:none}
+#crTabs button{flex:none;border:0;background:none;color:var(--ink-dim);font-family:var(--ui);font-size:15px;height:44px;padding:0 12px;cursor:pointer;border-bottom:2px solid transparent}
+#crTabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--amber)}
+#crBody{flex:1;overflow-y:auto;padding:4px 16px 12px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+#crBody section{margin-top:12px}
+#crBody h3{margin:0 0 8px;font-size:13px;font-weight:400;color:var(--ink-dim)}
+#crBody h3 small{font-size:11px;opacity:.75;margin-left:4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{height:36px;padding:0 12px;border-radius:10px;border:1px solid rgba(240,226,190,.18);background:rgba(255,255,255,.05);color:var(--ink);
+  font-family:var(--ui);font-size:14px;cursor:pointer}
+.chip.sm{height:30px;font-size:13px;padding:0 10px}
+.chip[aria-pressed="true"]{background:rgba(240,178,74,.22);border-color:var(--amber);color:#fff}
+.sw{display:flex;flex-wrap:wrap;gap:8px}
+.swc{position:relative;width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.2);background:var(--c);cursor:pointer;padding:0;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+.swc[aria-pressed="true"],.swc.pick.on{border-color:var(--amber);box-shadow:0 0 0 2px rgba(240,178,74,.45),inset 0 0 0 1px rgba(0,0,0,.25)}
+.swc.pick{display:grid;place-items:center;overflow:hidden}
+.swc.pick span{font-size:16px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);pointer-events:none}
+.swc.pick input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;border:0;padding:0}
+.cr-foot{padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid rgba(240,226,190,.12)}
+@media (min-width:760px) and (min-aspect-ratio:1/1){
+  #creator{--panel-w:400px}
+  #crStage{bottom:0;right:var(--panel-w)}
+  #crMotion{bottom:calc(18px + env(safe-area-inset-bottom,0px));left:calc((100% - var(--panel-w)) / 2)}
+  #crBusy{left:calc((100% - var(--panel-w)) / 2)}
+  #crPanel{left:auto;top:0;height:auto;width:var(--panel-w);border-radius:0;border-top:0;border-left:1px solid var(--panel-line)}
+}
+body.creating .hud{display:none!important}
+#crMotion button{white-space:nowrap}
