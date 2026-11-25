@@ -9,7 +9,7 @@ import { createInput } from './input.js';
 import { createProgress } from './progress.js';
 import { createMap } from './map.js';
 import { createGrass } from './grass.js';
-import { windTime } from './wind.js';
+import { windTime, rimLight } from './wind.js';
 import { createFx } from './fx.js';
 import { createCampfires } from './campfire.js';
 import { createForestry } from './forestry.js';
@@ -148,6 +148,7 @@ function step(now) {
   world.pump(2);
   world.cull(camera, P.x, P.z);
   windTime.value = now / 1000;
+  rimLight.value = 0.06 + 0.3 * env.light.day;
   grass.update(P.x, P.z);
   env.update(dt, now, P.x, P.z, P.y, camera);
   fires.setNight(env.light.night);
