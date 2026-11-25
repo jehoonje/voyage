@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&family=Gowun+Dodum&display=swap">
+<style>
+  html,body{margin:0;background:#ebe7e0;font-family:"Gowun Dodum",system-ui,sans-serif;color:#3a342c}
+  canvas{display:block;position:absolute;left:0;top:0;z-index:1}
+  .title{position:absolute;left:44px;top:24px;z-index:2}
+  .title h1{margin:0;font-family:"Gowun Batang",serif;font-size:30px}
+  .title p{margin:6px 0 0;font-size:14px;color:#6a6052}
+  .grid{position:absolute;left:30px;right:30px;top:100px;bottom:20px;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(2,1fr);gap:14px;z-index:0}
+  .cell{border-radius:14px;background:rgba(255,255,255,.35);position:relative}
+  .cell span{z-index:3;position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:16px}
+  .cell b{position:absolute;left:12px;top:10px;font-family:"Gowun Batang",serif;font-size:15px;color:#8a7e6e}
+</style></head>
+<body>
+<div class="title"><h1 id="t"></h1><p id="p"></p></div>
+<div class="grid" id="grid"></div>
+<script type="module">
+import * as THREE from 'three';
+import { createCustom, EYES, HATS, HAIR, OUTFITS } from './custom.js';
+const which = new URLSearchParams(location.search).get('s') || 'outfits';
+const SKINS = [0xf2c8a8, 0xe0a882, 0xc68a62, 0x9a6444, 0x6e4430, 0xf0c2a2, 0xd8a07a, 0xb07a56, 0x86583c, 0xf4cfb2];
+const HAIRC = [0x2a1e16, 0x4a3020, 0x6a4026, 0x1a1614, 0xb24a2a, 0xd8b06a, 0x3a2818, 0x5a3a22, 0x8a5a32, 0x242020];
+const CFG = {
+  eyes: { t: '눈 10종', p: '3D 눈알 + 눈꺼풀 · 기울기 · 크기 · 속눈썹 · 홍채 색 조합', keys: Object.keys(EYES), label: (k) => EYES[k].name,
+    opt: (k, i) => ({ eyes: k, skin: SKINS[i], hairStyle: ['crop', 'bob', 'sidepart', 'long', 'curly', 'ponytail', 'spiky', 'twinbraid', 'sparkle' in HAIR ? 'bun' : 'bun', 'bob'][i], hairColor: HAIRC[i], outfit: 'sage' }), view: 'face' },
+  hats: { t: '모자 10종', p: '레퍼런스 무드의 캡 · 버킷 · 비니 · 두건 · 바이저', keys: Object.keys(HATS), label: (k) => HATS[k].name,
+    opt: (k, i) => ({ hat: k, hatColor: [0x2a2c30, 0x5a6a3a, 0xd8ccb2, 0xb8b0d0, 0xc8b490, 0xd8c89a, 0x3a3e46, 0xe8e2d4, 0x1e1e22, 0xc8d4dc][i], skin: SKINS[(i + 3) % 10], hairStyle: ['crop', 'curly', 'bob', 'long', 'ponytail', 'sidebraid', 'crop', 'bob', 'long', 'bun'][i], hairColor: HAIRC[(i + 2) % 10], outfit: 'purple', eyes: 'almond' }), view: 'bust' },
+  hair: { t: '헤어스타일 10종', p: '숏부터 롱까지 · 성별 구분 없이 자유 조합', keys: Object.keys(HAIR), label: (k) => HAIR[k].name,
+    opt: (k, i) => ({ hairStyle: k, hairColor: [0x2a1e16, 0x5a3a22, 0x8a5a32, 0xb24a2a, 0x1a1614, 0x6a4026, 0xd8b06a, 0xe0c878, 0x3a2818, 0x4a3020][i], skin: SKINS[i], outfit: 'sage', eyes: 'almond' }), view: 'bust3q' },
+  outfits: { t: '의상 10종', p: '레퍼런스 룩에서 실루엣 · 색 조합 · 레이어링만 가져옴 (로고 없음)', keys: Object.keys(OUTFITS), label: (k) => OUTFITS[k].name,
+    opt: (k, i) => [
+      { hat: 'ballcap', hatColor: 0x26282a, hairStyle: 'curly', hairColor: 0x2a1e16 }, { hat: 'camp', hatColor: 0xa07440, hairStyle: 'curly', hairColor: 0x4a3020 },
+      { hat: 'camp', hatColor: 0x5a6a3a, hairStyle: 'crop', hairColor: 0x1a1614 }, { hat: 'bandana', hatColor: 0x1e1e22, hairStyle: 'crop', hairColor: 0x6a4026 },
+      { hat: null, hairStyle: 'spiky', hairColor: 0xe0c878 }, { hat: 'camp', hatColor: 0x8a8a3a, hairStyle: 'crop', hairColor: 0x6a4026 },
+      { hat: 'mesh', hatColor: 0xc8c0dc, hairStyle: 'curly', hairColor: 0xb24a2a }, { hat: 'bucketgoggle', hatColor: 0xc8b490, hairStyle: 'sidebraid', hairColor: 0x2a1e16 },
+      { hat: 'ballcap', hatColor: 0x5a4636, hairStyle: 'bob', hairColor: 0x3a2818 }, { hat: 'plaidcap', hatColor: 0xffffff, hairStyle: 'bob', hairColor: 0x4a3020 },
+    ][i] && Object.assign({ outfit: k, skin: SKINS[[0, 1, 4, 5, 2, 0, 9, 3, 6, 1][i]], eyes: ['almond', 'droopy', 'narrow', 'sleepy', 'upturned', 'round', 'freckle', 'lash', 'sparkle', 'almond'][i] }, [
+      { hat: 'ballcap', hatColor: 0x26282a, hairStyle: 'curly', hairColor: 0x2a1e16 }, { hat: 'camp', hatColor: 0xa07440, hairStyle: 'curly', hairColor: 0x4a3020 },
+      { hat: 'camp', hatColor: 0x5a6a3a, hairStyle: 'crop', hairColor: 0x1a1614 }, { hat: 'bandana', hatColor: 0x1e1e22, hairStyle: 'crop', hairColor: 0x6a4026 },
+      { hat: null, hairStyle: 'spiky', hairColor: 0xe0c878 }, { hat: 'camp', hatColor: 0x8a8a3a, hairStyle: 'crop', hairColor: 0x6a4026 },
+      { hat: 'mesh', hatColor: 0xc8c0dc, hairStyle: 'curly', hairColor: 0xb24a2a }, { hat: 'bucketgoggle', hatColor: 0xc8b490, hairStyle: 'sidebraid', hairColor: 0x2a1e16 },
+      { hat: 'ballcap', hatColor: 0x5a4636, hairStyle: 'bob', hairColor: 0x3a2818 }, { hat: 'plaidcap', hatColor: 0xffffff, hairStyle: 'bob', hairColor: 0x4a3020 },
+    ][i]), view: 'full' },
+};
+const C = CFG[which];
+document.getElementById('t').textContent = '캐릭터 커스터마이징 · ' + C.t;
+document.getElementById('p').textContent = C.p;
+const W = 1800, H = 1100;
+const grid = document.getElementById('grid');
+C.keys.forEach((k, i) => { const d = document.createElement('div'); d.className = 'cell'; d.innerHTML = `<b>${String(i + 1).padStart(2, '0')}</b><span>${C.label(k)}</span>`; grid.appendChild(d); });
+const r = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+r.setSize(W, H); r.setClearColor(0x000000, 0); r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05; r.autoClear = false;
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xfff6ec, 0x8a8478, 1.35));
+const key = new THREE.DirectionalLight(0xfff0e0, 2.3); key.position.set(-1.5, 3, 3); key.castShadow = true;
+key.shadow.mapSize.set(4096, 4096); key.shadow.radius = 5; key.shadow.bias = -0.0004; Object.assign(key.shadow.camera, { left: -30, right: 30, top: 3, bottom: -2 });
+scene.add(key, key.target);
+const rim = new THREE.DirectionalLight(0xffe0c8, 1.1); rim.position.set(2, 2, -3); scene.add(rim);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 8).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.18 })); ground.receiveShadow = true; scene.add(ground);
+const SP = 3;
+C.keys.forEach((k, i) => {
+  const ch = createCustom(scene, C.opt(k, i));
+  ch.position.x = (i - 4.5) * SP;
+  ch.rotation.y = C.view === 'face' ? 0.18 : C.view === 'bust3q' ? 0.75 : C.view === 'bust' ? 0.45 : 0.35;
+});
+const cells = [...grid.children].map((c) => c.getBoundingClientRect());
+r.setScissorTest(true);
+C.keys.forEach((k, i) => {
+  const b = cells[i], vx = b.left, vy = H - b.bottom, vw = b.width, vh = b.height - 34;
+  const x = (i - 4.5) * SP;
+  const cam = new THREE.PerspectiveCamera(C.view === 'full' ? 20 : 20, vw / vh, 0.05, 30);
+  if (C.view === 'full') { cam.position.set(x, 0.78, 4.1); cam.lookAt(x, 0.66, 0); }
+  else if (C.view === 'face') { cam.position.set(x, 1.05, 1.75); cam.lookAt(x, 1.03, 0); }
+  else { cam.position.set(x, 1.04, 2.35); cam.lookAt(x, 1.0, 0); }
+  r.setViewport(vx, vy + 34, vw, vh); r.setScissor(vx, vy + 34, vw, vh);
+  r.render(scene, cam);
+});
+window.done = true;
+</script>
+</body></html>
