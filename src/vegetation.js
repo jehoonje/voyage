@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { windTime, rimLight } from './wind.js';
 import { addFade } from './forestry.js';
 import { buildModels } from './treeModels.js';
+import { natureTextures } from './textures.js';
 
 const G = buildModels();
 
@@ -38,35 +39,49 @@ function vegShader(mat, { flutter = false, rim = false, hang = false } = {}) {
   return mat;
 }
 
+const T = natureTextures();
 const Lm = (c, extra) => new THREE.MeshLambertMaterial({ color: c, vertexColors: true, ...extra });
+
+/** cut-out foliage: alpha-tested texture, both sides, with a matching shadow caster */
+function foliage(map, opts = {}) {
+  // alpha-to-coverage keeps distant (mipmapped) leaves solid instead of fading away
+  const mat = vegShader(Lm(0xffffff, { map, alphaTest: 0.3, alphaToCoverage: true, side: THREE.DoubleSide }), { flutter: true, rim: true, ...opts });
+  mat.userData.depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.3, side: THREE.DoubleSide });
+  return mat;
+}
+
 const M = {
-  bark: vegShader(Lm(0x6b4a2f)),
-  palmBark: vegShader(Lm(0x9a7a52)),
-  leaf: vegShader(Lm(0xffffff), { flutter: true, rim: true }),
-  frond: vegShader(Lm(0xffffff, { side: THREE.DoubleSide }), { flutter: true, rim: true }),
+  bark: vegShader(Lm(0xffffff, { map: T.barkBrown })),
+  birchBark: vegShader(Lm(0xffffff, { map: T.barkBirch })),
+  palmBark: vegShader(Lm(0xffffff, { map: T.barkPalm })),
+  broad: foliage(T.broad),
+  birch: foliage(T.birch),
+  jungle: foliage(T.jungle),
+  bush: foliage(T.bush),
+  pine: foliage(T.pine),
+  palm: foliage(T.palm),
+  willow: foliage(T.willow, { hang: true }),
   cact: vegShader(Lm(0x4f8a4a), { rim: true }),
-  birchBark: vegShader(Lm(0xe6e1d4)),
-  curtain: vegShader(Lm(0xffffff, { side: THREE.DoubleSide }), { flutter: true, rim: true, hang: true }),
   rock: vegShader(Lm(0x948f88)),
 };
 
-/** base foliage colours, varied per instance (vertex shading multiplies on top) */
+/** per-instance colour variation; leaf colour itself comes from the textures */
 export const TINT = {
-  pine: [0.2, 0.42, 0.26], broad: [0.4, 0.64, 0.27], jungle: [0.18, 0.5, 0.19],
-  bush: [0.45, 0.66, 0.3], palm: [0.36, 0.64, 0.27], birch: [0.56, 0.72, 0.3], willow: [0.4, 0.58, 0.27],
+  pine: [0.95, 1, 0.95], broad: [1, 1, 0.95], jungle: [0.95, 1, 0.95],
+  bush: [1, 1, 0.95], palm: [1, 1, 0.95], birch: [1.02, 1, 0.92], willow: [1, 1, 0.92],
 };
 
 /** each type: list of [geometry, material, tintKey?] parts sharing one transform */
 export const TYPES = {
-  pine: [[G.pineTrunk, M.bark], [G.pineLeaves, M.leaf, 'pine']],
-  birch: [[G.birchTrunk, M.birchBark], [G.birchCrown, M.leaf, 'birch']],
-  willow: [[G.willowTrunk, M.bark], [G.willowDome, M.leaf, 'willow'], [G.willowCurtain, M.curtain, 'willow']],
-  broad: [[G.broadTrunk, M.bark], [G.broadCrown, M.leaf, 'broad']],
-  jungle: [[G.jungTrunk, M.bark], [G.jungCrown, M.leaf, 'jungle']],
-  palm: [[G.palmTrunk, M.palmBark], [G.palmFronds, M.frond, 'palm']],
+  pine: [[G.pineTrunk, M.bark], [G.pineLeaves, M.pine, 'pine']],
+  birch: [[G.birchTrunk, M.birchBark], [G.birchCrown, M.birch, 'birch']],
+  willow: [[G.willowTrunk, M.bark], [G.willowDome, M.willow, 'willow'], [G.willowCurtain, M.willow, 'willow']],
+  broad: [[G.broadTrunk, M.bark], [G.broadCrown, M.broad, 'broad']],
+  jungle: [[G.jungTrunk, M.bark], [G.jungCrown, M.jungle, 'jungle'], [G.jungVines, M.willow, 'jungle']],
+  palm: [[G.palmTrunk, M.palmBark], [G.palmFronds, M.palm, 'palm']],
   cactus: [[G.cactus, M.cact]],
   rock: [[G.rock, M.rock]],
-  bush: [[G.bush, M.leaf, 'bush']],
+  bush: [[G.bush, M.bush, 'bush']],
 };
 
 /** pick a vegetation type for a biome given a random r in [0,1) */

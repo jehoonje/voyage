@@ -162,8 +162,8 @@ export function createEnvironment(scene, startTime = 0.3) {
     zenith.copy(TOP_NIGHT).lerp(TOP_DAY, day).lerp(TOP_DUSK, dusk * 0.7);
     horizon.copy(HOR_NIGHT).lerp(HOR_DAY, day).lerp(HOR_DUSK, dusk * 0.85);
     scene.fog.color.copy(horizon);
-    scene.fog.near = mix(16, 70, day); // night narrows the view
-    scene.fog.far = mix(62, 190, day);
+    scene.fog.near = mix(16, touch ? 55 : 70, day); // night narrows the view
+    scene.fog.far = mix(62, touch ? 145 : 190, day);
 
     hemi.color.copy(HEMI_NIGHT).lerp(HEMI_DAY, day);
     hemi.groundColor.copy(GROUND_NIGHT).lerp(GROUND_DAY, day);

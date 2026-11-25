@@ -21,7 +21,8 @@ const FRAG_SPLAT = /* glsl */ `
 
   // grass: clumps, blade speckle, sunlit tips
   float gPat = .8 + .26*(nA-.5) + .16*(nB-.5)*fade + .12*(nC-.5)*fade;
-  vec3 grass = base*gPat + vec3(.05,.045,-.02)*smoothstep(.62,.9,nA)*fade;
+  // turf under the grass cards: darker and earthier so gaps between tufts read as shade, not lawn
+  vec3 grass = base*gPat*vec3(.72,.7,.66) + vec3(.03,.025,-.01)*smoothstep(.62,.9,nA)*fade;
 
   // sand: wind ripples, grain
   float rip = sin(dot(p, vec2(.8,.6))*3.1 + nA*7.)*.5 + .5;
@@ -43,6 +44,11 @@ const FRAG_SPLAT = /* glsl */ `
   float mx = max(max(hb.x, hb.y), max(hb.z, hb.w));
   vec4 b = max(hb - mx + .18, 0.); b /= b.x + b.y + b.z + b.w;
   diffuseColor.rgb = grass*b.x + sand*b.y + rockC*b.z + snowC*b.w;
+  // bare soil peeking through the turf
+  diffuseColor.rgb = mix(diffuseColor.rgb, base * vec3(.72, .6, .46), .3 * b.x * smoothstep(.55, .85, nC) * fade);
+  // wet, darker bank along the waterline
+  float wet = (1. - smoothstep(.2, 1.6, vWP.y)) * step(-.6, vWP.y);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(.52, .5, .44), wet * .7);
 }
 `;
 

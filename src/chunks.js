@@ -7,7 +7,9 @@ import { TYPES, TINT, pickVegetation } from './vegetation.js';
 import { CHOPPABLE, felled, poseTree } from './forestry.js';
 
 export const CHUNK = 48;
-const SEG = 16, RADIUS = 3, STEP = CHUNK / SEG, VEG_GRID = 4;
+const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+// phones stream a smaller ring of chunks (dense foliage is expensive)
+const SEG = 16, RADIUS = touch ? 2 : 3, STEP = CHUNK / SEG, VEG_GRID = 4;
 /** trunk radius per type, before instance scale */
 const TRUNK_R = { pine: 0.3, broad: 0.36, jungle: 0.5, palm: 0.26, cactus: 0.42, birch: 0.17, willow: 0.5 };
 /** [centre height, radius] spheres approximating each tree type, before instance scale */
@@ -110,6 +112,7 @@ export class ChunkManager {
         const im = new THREE.InstancedMesh(geo, mat, cnt);
         im.frustumCulled = false; // culled per chunk instead
         im.castShadow = true;
+        if (mat.userData.depth) im.customDepthMaterial = mat.userData.depth; // leaf-shaped shadows
         for (let q = 0; q < cnt; q++) {
           const rr = L[q * 6 + 3], sc = t === 'rock' ? 0.6 + rr * 1.6 : 0.75 + rr * 0.6;
           dummy.position.set(L[q * 6], L[q * 6 + 1], L[q * 6 + 2]);

@@ -1,50 +1,191 @@
-// Procedural low-poly tree models with baked vertex shading.
-// Crowns are clusters of jittered lobes; trunks taper, bend and flare at the roots.
-// Vertex colours carry ambient occlusion (dark inside / below, light on top),
-// which multiplies with each instance's tint.
+// Tree models: bark-textured trunks and branches, and crowns built from many
+// alpha-cut leaf cards. Cards get "spherical" normals (pointing out from the crown
+// centre) so the crown shades like a soft volume rather than flat planes.
+// Vertex colours carry ambient occlusion: darker inside and underneath.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hash2, sstep } from './noise.js';
 
-const hash3 = (a, b, c) => hash2(a * 73856 + c * 19349, b * 83492 - c * 7);
+/* ---------- seeded helpers ---------- */
+let s = 1;
+const seed = (v) => { s = (v * 7919 + 13) % 2147483647 || 1; };
+const rnd = () => (s = (s * 48271) % 2147483647) / 2147483647;
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const UP = V(0, 1, 0);
+function randUnit() {
+  const z = rnd() * 2 - 1, a = rnd() * 6.283, r = Math.sqrt(1 - z * z);
+  return V(Math.cos(a) * r, z, Math.sin(a) * r);
+}
 
+/* ---------- bark parts ---------- */
+
+/** tapered trunk bending toward +x, flared at the roots; uv repeats the bark texture */
+function trunk(h, r0, r1, { bend = 0, flare = 1.3, seg = 8, hs = 6, uvU = 2 } = {}) {
+  const g = new THREE.CylinderGeometry(r1, r0, h, seg, hs).translate(0, h / 2, 0);
+  const p = g.attributes.position, uv = g.attributes.uv;
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i), t = y / h, f = 1 + (flare - 1) * Math.pow(1 - t, 4);
+    p.setXYZ(i, p.getX(i) * f + bend * t * t * h, y, p.getZ(i) * f);
+    uv.setXY(i, uv.getX(i) * uvU, uv.getY(i) * h / 1.6);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+/** a branch from `from` to `to` */
+function limb(from, to, r) {
+  const d = to.clone().sub(from), len = d.length();
+  const g = new THREE.CylinderGeometry(r * 0.55, r, len, 6, 1).translate(0, len / 2, 0);
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i), uv.getY(i) * len / 1.6);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, d.normalize()));
+  g.translate(from.x, from.y, from.z);
+  return g;
+}
+/** merge bark parts and bake a height AO gradient into vertex colours */
+function barkGeometry(parts, shade = [0.55, 1.05]) {
+  const g = mergeGeometries(parts.map((p) => (p.index ? p : p)));
+  const p = g.attributes.position, n = p.count, col = new Float32Array(n * 3);
+  let y1 = 0;
+  for (let i = 0; i < n; i++) y1 = Math.max(y1, p.getY(i));
+  for (let i = 0; i < n; i++) {
+    const c = shade[0] + (shade[1] - shade[0]) * Math.min(1, p.getY(i) / Math.max(1, y1 * 0.6));
+    col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = c;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeBoundingSphere();
+  return g;
+}
+
+/* ---------- leaf cards ---------- */
+
+class Cards {
+  constructor() { this.pos = []; this.nrm = []; this.uv = []; this.col = []; }
+  /** quad with corners a,b,c,d (counter-clockwise), uvs, per-corner normal and shade */
+  quad(a, b, c, d, uvs, normals, shades) {
+    const vs = [a, b, c, a, c, d], idx = [0, 1, 2, 0, 2, 3];
+    vs.forEach((v, k) => {
+      const j = idx[k];
+      this.pos.push(v.x, v.y, v.z);
+      this.nrm.push(normals[j].x, normals[j].y, normals[j].z);
+      this.uv.push(uvs[j][0], uvs[j][1]);
+      this.col.push(shades[j], shades[j], shades[j]);
+    });
+  }
+  geometry() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    g.computeBoundingSphere();
+    return g;
+  }
+}
+
+/**
+ * Fill an ellipsoid crown with leaf cards, mostly near its surface and facing outward.
+ * The texture's bottom (twig base) points back toward the crown centre.
+ */
+function crown(cards, center, radii, count, size, { outBias = 0.65, sizeVar = 0.4, ao = [0.5, 1.1] } = {}) {
+  const UV = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  for (let k = 0; k < count; k++) {
+    const d = randUnit(), r = Math.pow(rnd(), 0.4);
+    const p = V(center.x + d.x * radii.x * r, center.y + d.y * radii.y * r, center.z + d.z * radii.z * r);
+    const sz = size * (1 - sizeVar / 2 + rnd() * sizeVar);
+    const facing = d.clone().multiplyScalar(outBias).add(randUnit().multiplyScalar(1 - outBias)).normalize();
+    let up = d.clone().add(V(0, 0.6, 0)).normalize();
+    up.sub(facing.clone().multiplyScalar(up.dot(facing)));
+    if (up.lengthSq() < 1e-4) up = V(0, 1, 0);
+    up.normalize();
+    const side = new THREE.Vector3().crossVectors(up, facing).normalize();
+    const base = p.clone().addScaledVector(up, -sz * 0.35);
+    const corners = [
+      base.clone().addScaledVector(side, -sz / 2), base.clone().addScaledVector(side, sz / 2),
+      base.clone().addScaledVector(side, sz / 2).addScaledVector(up, sz), base.clone().addScaledVector(side, -sz / 2).addScaledVector(up, sz),
+    ];
+    const normals = corners.map((c) => V((c.x - center.x) / radii.x, (c.y - center.y) / radii.y + 0.25, (c.z - center.z) / radii.z).normalize());
+    const shades = corners.map((c) => {
+      const q = Math.min(1, Math.hypot((c.x - center.x) / radii.x, (c.y - center.y) / radii.y, (c.z - center.z) / radii.z));
+      const below = sstep(0.2, -0.8, (c.y - center.y) / radii.y);
+      return (ao[0] + (ao[1] - ao[0]) * q) * (1 - 0.25 * below);
+    });
+    cards.quad(...corners, UV, normals, shades);
+  }
+}
+
+/** pine: radial tiers of drooping branch cards (two crossed planes per branch) */
+function pineTiers(cards, { h0 = 1.4, h1 = 7.2, tiers = 11, perTier = 7, maxLen = 2.7 }) {
+  for (let i = 0; i < tiers; i++) {
+    const t = i / (tiers - 1), y = h0 + (h1 - h0) * t, L = maxLen * (1 - t * 0.85) + 0.35;
+    for (let k = 0; k < perTier; k++) {
+      const a = i * 0.9 + (k / perTier) * 6.283 + rnd() * 0.4, dir = V(Math.cos(a), 0, Math.sin(a));
+      const side = V(-dir.z, 0, dir.x), w = 0.45 + L * 0.25, droop = L * (0.25 + rnd() * 0.15);
+      const b = V(0, y, 0), tip = b.clone().addScaledVector(dir, L).add(V(0, -droop, 0));
+      const shade = 0.5 + 0.6 * t;
+      const up = V(dir.x * 0.3, 1, dir.z * 0.3).normalize();
+      // horizontal plane
+      cards.quad(b.clone().addScaledVector(side, -w * 0.3), tip.clone().addScaledVector(side, -w * 0.5), tip.clone().addScaledVector(side, w * 0.5), b.clone().addScaledVector(side, w * 0.3),
+        [[0, 0.3], [1, 0], [1, 1], [0, 0.7]], [up, up, up, up], [shade * 0.7, shade, shade, shade * 0.7]);
+      // vertical plane through the same branch, for thickness from the side
+      const v = V(0, w * 0.45, 0);
+      cards.quad(b.clone().sub(v.clone().multiplyScalar(0.6)), tip.clone().sub(v), tip.clone().add(v), b.clone().add(v.clone().multiplyScalar(0.6)),
+        [[0, 0.3], [1, 0], [1, 1], [0, 0.7]], [up, up, up, up], [shade * 0.7, shade, shade, shade * 0.7]);
+    }
+  }
+}
+
+/** willow curtains: vertical strand cards hanging from the crown rim, facing outward */
+function curtains(cards, cx, cy, count) {
+  for (let k = 0; k < count; k++) {
+    const a = (k / count) * 6.283 + rnd() * 0.3, out = V(Math.cos(a), 0, Math.sin(a)), side = V(-out.z, 0, out.x);
+    const rad = 1.3 + rnd() * 1.4, top = cy + 0.4 - rad * 0.25, len = 2.6 + rnd() * 1.4, w = 0.9;
+    const c0 = V(cx + out.x * rad, top, out.z * rad), c1 = c0.clone().addScaledVector(out, 0.35).add(V(0, -len, 0));
+    const n = out.clone().add(V(0, 0.2, 0)).normalize();
+    cards.quad(c1.clone().addScaledVector(side, -w / 2), c1.clone().addScaledVector(side, w / 2), c0.clone().addScaledVector(side, w / 2), c0.clone().addScaledVector(side, -w / 2),
+      [[0, 0], [1, 0], [1, 1], [0, 1]], [n, n, n, n], [0.6, 0.6, 1.05, 1.05]);
+  }
+}
+
+/** palm fronds: arched strips mapped with the frond texture (u along, v across) */
+function fronds(cards, tx, ty, count = 9) {
+  for (let k = 0; k < count; k++) {
+    const a = (k / count) * 6.283 + hash2(k, 7) * 0.4, dx = Math.cos(a), dz = Math.sin(a), sx = -dz, sz = dx;
+    const len = 3.1 * (0.85 + hash2(k, 3) * 0.3), lift = 0.5 + hash2(k, 5) * 0.3, W = 0.8;
+    const at = (t) => V(tx + dx * len * t, ty + lift * t - 1.9 * t * t, dz * len * t);
+    for (let sgi = 0; sgi < 6; sgi++) {
+      const t0 = sgi / 6, t1 = (sgi + 1) / 6, p0 = at(t0), p1 = at(t1);
+      const n = V(0, 1, 0);
+      const sh0 = 0.6 + 0.45 * t0, sh1 = 0.6 + 0.45 * t1;
+      cards.quad(p0.clone().add(V(-sx * W, -0.05, -sz * W)), p1.clone().add(V(-sx * W, -0.05, -sz * W)), p1.clone().add(V(sx * W, -0.05, sz * W)), p0.clone().add(V(sx * W, -0.05, sz * W)),
+        [[t0, 0], [t1, 0], [t1, 1], [t0, 1]], [n, n, n, n], [sh0, sh1, sh1, sh0]);
+    }
+  }
+}
+
+/* ---------- flat low-poly helpers kept for cactus and rock ---------- */
+const hash3 = (a, b, c) => hash2(a * 73856 + c * 19349, b * 83492 - c * 7);
 function prep(g) {
   const n = g.index ? g.toNonIndexed() : g;
   n.deleteAttribute('uv');
   if (!n.attributes.normal) n.computeVertexNormals();
   return n;
 }
-
-/**
- * Merge parts, jitter vertices (same position → same offset, so no cracks),
- * recompute flat normals, and bake a vertical AO gradient into vertex colours.
- */
-function finish(parts, { jitter = 0, shade = [0.6, 1.12], moss = 0, rings = 0, marks = 0, seed = 1 } = {}) {
+function faceted(parts, { jitter = 0, shade = [0.6, 1.12], moss = 0, seed: sd = 1 } = {}) {
   const g = mergeGeometries(parts.map(prep));
   const p = g.attributes.position, n = p.count;
   let y0 = Infinity, y1 = -Infinity;
-  for (let i = 0; i < n; i++) { const y = p.getY(i); if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  for (let i = 0; i < n; i++) { const y = p.getY(i); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
   if (jitter) {
     for (let i = 0; i < n; i++) {
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      const kx = Math.round(x * 40), ky = Math.round(y * 40), kz = Math.round(z * 40);
-      p.setXYZ(i,
-        x + (hash3(kx, ky, kz + seed) - 0.5) * 2 * jitter,
-        y + (hash3(ky, kz, kx + seed) - 0.5) * 2 * jitter * 0.7,
-        z + (hash3(kz, kx, ky + seed) - 0.5) * 2 * jitter);
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), kx = Math.round(x * 40), ky = Math.round(y * 40), kz = Math.round(z * 40);
+      p.setXYZ(i, x + (hash3(kx, ky, kz + sd) - 0.5) * 2 * jitter, y + (hash3(ky, kz, kx + sd) - 0.5) * 1.4 * jitter, z + (hash3(kz, kx, ky + sd) - 0.5) * 2 * jitter);
     }
   }
-  g.computeVertexNormals(); // non-indexed → faceted
+  g.computeVertexNormals();
   const nrm = g.attributes.normal, col = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
-    const y = p.getY(i), t = (y - y0) / Math.max(1e-3, y1 - y0), ny = nrm.getY(i);
-    let c = shade[0] + (shade[1] - shade[0]) * Math.pow(t, 0.8) + ny * 0.08;
-    if (rings) c *= 0.86 + 0.14 * (Math.sin(y * rings) > 0 ? 1 : 0);
-    if (marks) { // birch bark: dark horizontal lenticels scattered around the trunk
-      const ang = Math.atan2(p.getZ(i), p.getX(i));
-      if (hash3(Math.round(y * 2.4), Math.round(ang * 1.2), 9) > 0.72) c *= 0.3;
-    }
-    let r = c, gg = c, b = c;
+    const t = (p.getY(i) - y0) / Math.max(1e-3, y1 - y0), ny = nrm.getY(i);
+    let c = shade[0] + (shade[1] - shade[0]) * Math.pow(t, 0.8) + ny * 0.08, r = c, gg = c, b = c;
     if (moss) { const m = moss * sstep(0.45, 0.85, ny); r *= 1 - 0.38 * m; gg *= 1 + 0.06 * m; b *= 1 - 0.45 * m; }
     col[i * 3] = r; col[i * 3 + 1] = gg; col[i * 3 + 2] = b;
   }
@@ -53,144 +194,119 @@ function finish(parts, { jitter = 0, shade = [0.6, 1.12], moss = 0, rings = 0, m
   return g;
 }
 
-/** tapered trunk; bends toward +x with height and flares at the roots */
-function trunk(h, r0, r1, { bend = 0, flare = 1.3, seg = 6, hs = 4 } = {}) {
-  const g = new THREE.CylinderGeometry(r1, r0, h, seg, hs).translate(0, h / 2, 0);
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const y = p.getY(i), t = y / h, f = 1 + (flare - 1) * Math.pow(1 - t, 4);
-    p.setXYZ(i, p.getX(i) * f + bend * t * t * h, y, p.getZ(i) * f);
-  }
-  return g;
-}
-const lobe = (r, x, y, z, sy = 1) => new THREE.IcosahedronGeometry(r, 0).scale(1, sy, 1).translate(x, y, z);
-const branch = (len, r, tiltZ, rotY, y) =>
-  new THREE.CylinderGeometry(r * 0.6, r, len, 5).translate(0, len / 2, 0).rotateZ(tiltZ).rotateY(rotY).translate(0, y, 0);
-
-/** willow curtains: long ribbons hanging from the crown's rim, bulging out a little */
-function strands(cx, cy, count = 34) {
-  const pos = [];
-  for (let k = 0; k < count; k++) {
-    const a = (k / count) * Math.PI * 2 + hash2(k, 11) * 0.3, ca = Math.cos(a), sa = Math.sin(a);
-    const rad = 1.4 + hash2(k, 12) * 1.5, top = cy + 0.5 - rad * 0.25;
-    const bottom = Math.max(0.5, top - (2.4 + hash2(k, 13) * 1.4)), w0 = 0.34;
-    const ring = [];
-    for (let s = 0; s <= 4; s++) {
-      const t = s / 4, y = top - (top - bottom) * t, out = rad + 0.35 * Math.sin(t * Math.PI * 0.7), w = w0 * (1 - 0.55 * t);
-      const x = cx + ca * out, z = sa * out;
-      ring.push([[x + sa * w, y, z - ca * w], [x - sa * w, y, z + ca * w]]);
-    }
-    for (let s = 0; s < 4; s++) {
-      const [a0, b0] = ring[s], [a1, b1] = ring[s + 1];
-      pos.push(...a0, ...b0, ...a1, ...b0, ...b1, ...a1);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  return g;
-}
-
-/** palm fronds: arched, tapering leaves with a slight V fold */
-function fronds(tx, ty, count = 8, L = 2.9) {
-  const pos = [];
-  for (let k = 0; k < count; k++) {
-    const a = (k / count) * Math.PI * 2 + hash2(k, 7) * 0.4, dx = Math.cos(a), dz = Math.sin(a);
-    const sx = -dz, sz = dx, len = L * (0.85 + hash2(k, 3) * 0.3), lift = 0.5 + hash2(k, 5) * 0.3;
-    const pts = [];
-    for (let s = 0; s <= 5; s++) {
-      const t = s / 5, w = 0.5 * Math.sin(Math.PI * Math.pow(t, 0.8));
-      const cx = tx + dx * len * t, cy = ty + lift * t - 1.9 * t * t, cz = dz * len * t;
-      pts.push([[cx - sx * w, cy - 0.08 * w, cz - sz * w], [cx, cy + 0.06 * w, cz], [cx + sx * w, cy - 0.08 * w, cz + sz * w]]);
-    }
-    for (let s = 0; s < 5; s++) {
-      const [l0, m0, r0] = pts[s], [l1, m1, r1] = pts[s + 1];
-      pos.push(...l0, ...m0, ...l1, ...m0, ...m1, ...l1, ...m0, ...r0, ...m1, ...r0, ...r1, ...m1);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  return g;
-}
+/* ---------- models ---------- */
 
 export function buildModels() {
-  // broadleaf: bent trunk with two branches, six-lobe crown
-  const bx = 0.15;
-  const broadTrunk = finish([
-    trunk(2.9, 0.38, 0.2, { bend: 0.05, flare: 1.5 }),
-    branch(1.5, 0.11, -0.75, 0.4, 2.0), branch(1.3, 0.1, 0.7, -0.9, 2.3),
-  ], { shade: [0.55, 1.05] });
-  const broadCrown = finish([
-    lobe(1.65, bx, 4.0, 0, 0.85), lobe(1.2, bx + 0.95, 3.65, 0.35, 0.85), lobe(1.25, bx - 0.85, 3.75, -0.4, 0.85),
-    lobe(1.1, bx + 0.15, 4.75, -0.15, 0.85), lobe(1.0, bx - 0.25, 3.35, 0.85, 0.85), lobe(0.95, bx + 0.5, 3.4, -0.9, 0.85),
-  ], { jitter: 0.14, shade: [0.52, 1.14], seed: 2 });
+  const M = {};
+  const top = (h, bend) => bend * h; // x offset of a bent trunk's top
 
-  // pine: five stacked tiers, each turned a little
-  const tiers = [[1.95, 2.1, 1.9], [1.6, 1.9, 2.95], [1.25, 1.7, 3.9], [0.85, 1.5, 4.8], [0.45, 1.2, 5.6]];
-  const pineTrunk = finish([trunk(3.2, 0.3, 0.12, { flare: 1.7 })], { shade: [0.5, 1.0] });
-  const pineLeaves = finish(
-    tiers.map(([r, h, y], k) => new THREE.ConeGeometry(r, h, 8).rotateY(k * 0.7).translate(0, y + h / 2, 0)),
-    { jitter: 0.1, shade: [0.48, 1.12], seed: 3 },
-  );
+  // broadleaf (oak-like): sturdy trunk, five limbs into a rounded crown
+  seed(1);
+  {
+    const h = 3.4, bend = 0.05, cx = top(h, bend) * 0.8, c = V(cx, 5.0, 0);
+    const limbs = [];
+    for (let k = 0; k < 5; k++) {
+      const a = k * 1.26 + rnd() * 0.3, from = V(bend * h * 0.6, 2.6 + rnd() * 0.6, 0);
+      limbs.push(limb(from, V(cx + Math.cos(a) * 1.6, 4.4 + rnd() * 1.2, Math.sin(a) * 1.6), 0.13));
+    }
+    M.broadTrunk = barkGeometry([trunk(h + 0.6, 0.4, 0.2, { bend, flare: 1.6 }), ...limbs]);
+    const cards = new Cards();
+    crown(cards, c, V(2.4, 1.9, 2.4), 95, 1.6);
+    M.broadCrown = cards.geometry();
+  }
 
-  // jungle: tall flared trunk with buttress roots, wide flat canopy
-  const jungTrunk = finish([
-    trunk(7.2, 0.55, 0.28, { bend: 0.03, flare: 2.2, hs: 5 }),
-    ...[0, 2.1, 4.2].map((a) => new THREE.BoxGeometry(0.12, 1.2, 0.9).translate(0, 0.5, 0.55).rotateY(a)),
-  ], { shade: [0.45, 1.0] });
-  const jx = 0.22;
-  const jungCrown = finish([
-    lobe(2.5, jx, 7.6, 0, 0.55), lobe(1.8, jx + 1.9, 7.2, 0.5, 0.6), lobe(1.9, jx - 1.7, 7.35, -0.7, 0.6),
-    lobe(1.6, jx + 0.4, 7.1, -1.8, 0.6), lobe(1.5, jx - 0.5, 8.2, 1.0, 0.6), lobe(1.3, jx + 1.2, 8.0, -0.9, 0.6),
-  ], { jitter: 0.2, shade: [0.48, 1.1], seed: 4 });
+  // birch: slender white trunk, thin rising limbs, light airy crown
+  seed(2);
+  {
+    const h = 7.4, bend = 0.04, limbs = [];
+    for (let k = 0; k < 7; k++) {
+      const y = 3.4 + k * 0.5, a = k * 2.3, from = V(bend * h * (y / h) ** 2, y, 0);
+      limbs.push(limb(from, from.clone().add(V(Math.cos(a) * 1.1, 1.0 + rnd() * 0.6, Math.sin(a) * 1.1)), 0.05));
+    }
+    M.birchTrunk = barkGeometry([trunk(h, 0.2, 0.06, { bend, flare: 1.3, uvU: 1 }), ...limbs], [0.75, 1.05]);
+    const cards = new Cards();
+    crown(cards, V(top(h, bend) * 0.7, 5.6, 0), V(1.6, 2.3, 1.6), 80, 1.25, { outBias: 0.5 });
+    M.birchCrown = cards.geometry();
+  }
+
+  // pine: straight tall trunk, drooping tiered branches
+  seed(3);
+  {
+    M.pineTrunk = barkGeometry([trunk(7.6, 0.32, 0.08, { flare: 1.7 })]);
+    const cards = new Cards();
+    pineTiers(cards, {});
+    M.pineLeaves = cards.geometry();
+  }
+
+  // jungle: very tall trunk with buttresses, broad flat canopy and hanging vines
+  seed(4);
+  {
+    const h = 9.2, bend = 0.03, cx = top(h, bend);
+    const buttress = [0, 2.1, 4.2].map((a) => new THREE.BoxGeometry(0.14, 1.4, 1.0).translate(0, 0.6, 0.6).rotateY(a));
+    const limbs = [];
+    for (let k = 0; k < 6; k++) {
+      const a = k * 1.05 + rnd() * 0.3;
+      limbs.push(limb(V(cx * 0.8, 7.6, 0), V(cx + Math.cos(a) * 2.6, 8.8 + rnd() * 0.6, Math.sin(a) * 2.6), 0.16));
+    }
+    M.jungTrunk = barkGeometry([trunk(h, 0.6, 0.3, { bend, flare: 2.0 }), ...buttress, ...limbs], [0.45, 1.0]);
+    const cards = new Cards();
+    crown(cards, V(cx, 9.2, 0), V(3.8, 1.4, 3.8), 70, 2.1, { outBias: 0.4 });
+    M.jungCrown = cards.geometry();
+    const vines = new Cards();
+    curtains(vines, cx, 8.6, 10);
+    M.jungVines = vines.geometry();
+  }
+
+  // willow: thick leaning trunk, low dome and long hanging curtains
+  seed(5);
+  {
+    const h = 3.0, bend = 0.18, cx = top(h, bend), limbs = [];
+    for (let k = 0; k < 5; k++) {
+      const a = k * 1.26 + 0.3;
+      limbs.push(limb(V(cx * 0.8, 2.4, 0), V(cx + Math.cos(a) * 1.8, 4.2 + rnd() * 0.5, Math.sin(a) * 1.8), 0.15));
+    }
+    M.willowTrunk = barkGeometry([trunk(h, 0.55, 0.3, { bend, flare: 1.8 }), ...limbs], [0.5, 1.0]);
+    const dome = new Cards();
+    crown(dome, V(cx, 4.4, 0), V(2.5, 1.1, 2.5), 40, 1.4);
+    M.willowDome = dome.geometry();
+    const cur = new Cards();
+    curtains(cur, cx, 4.5, 46);
+    M.willowCurtain = cur.geometry();
+  }
 
   // palm: curved ringed trunk, coconuts, arched fronds
-  const ph = 5.2, pb = 0.12, ptx = pb * ph;
-  const palmTrunk = finish([
-    trunk(ph, 0.27, 0.15, { bend: pb, flare: 1.4, hs: 6 }),
-    ...[0, 2.1, 4.2].map((a) => new THREE.IcosahedronGeometry(0.17, 0).translate(ptx + Math.cos(a) * 0.2, ph - 0.25, Math.sin(a) * 0.2)),
-  ], { shade: [0.6, 1.05], rings: 7 });
-  const palmFronds = finish([fronds(ptx, ph)], { shade: [0.62, 1.08] });
-
-  const bush = finish([lobe(0.85, 0, 0.55, 0), lobe(0.6, 0.55, 0.4, 0.25), lobe(0.65, -0.5, 0.45, -0.2), lobe(0.55, 0.1, 0.5, -0.55)],
-    { jitter: 0.1, shade: [0.58, 1.1], seed: 5 });
-
-  // saguaro: ribbed body and two elbowed arms
-  const arm = (side, y, s) => [
-    new THREE.CylinderGeometry(0.2 * s, 0.2 * s, 0.7 * s, 8).rotateZ(Math.PI / 2).translate(side * 0.6 * s, y, 0),
-    new THREE.CylinderGeometry(0.18 * s, 0.21 * s, 1.1 * s, 8).translate(side * 0.9 * s, y + 0.5 * s, 0),
-    new THREE.SphereGeometry(0.18 * s, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(side * 0.9 * s, y + 1.05 * s, 0),
-  ];
-  const cactus = finish([
-    new THREE.CylinderGeometry(0.36, 0.42, 3.1, 8, 3).translate(0, 1.55, 0),
-    new THREE.SphereGeometry(0.36, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 3.1, 0),
-    ...arm(1, 1.5, 1), ...arm(-1, 1.95, 0.8),
-  ], { jitter: 0.02, shade: [0.68, 1.06] });
-
-  const rock = finish([new THREE.DodecahedronGeometry(1, 1)], { jitter: 0.16, shade: [0.62, 1.08], moss: 0.8, seed: 6 });
-
-  // birch: slender white trunk with dark marks, airy crown of small lobes
-  const bh = 6.2, bbend = 0.04, bxAt = (y) => bbend * (y / bh) ** 2 * bh;
-  const birchTrunk = finish([
-    trunk(bh, 0.18, 0.07, { bend: bbend, flare: 1.3, seg: 7, hs: 9 }),
-    branch(1.2, 0.05, -0.9, 0.3, 3.4), branch(1.0, 0.045, 0.85, 2.2, 4.1), branch(0.9, 0.04, -0.8, 4.0, 4.8),
-  ], { shade: [0.72, 1.05], marks: 1 });
-  const birchLobes = [];
-  for (let k = 0; k < 11; k++) {
-    const a = k * 2.4, rr = 0.35 + 0.85 * hash2(k, 21), y = 3.7 + 2.5 * hash2(k, 22);
-    birchLobes.push(lobe(0.55 + 0.35 * hash2(k, 23), bxAt(y) + Math.cos(a) * rr, y, Math.sin(a) * rr, 0.9));
+  seed(6);
+  {
+    const h = 5.4, bend = 0.12, tx = top(h, bend);
+    M.palmTrunk = barkGeometry([
+      trunk(h, 0.27, 0.16, { bend, flare: 1.4, hs: 8, uvU: 1 }),
+      ...[0, 2.1, 4.2].map((a) => new THREE.SphereGeometry(0.17, 8, 6).translate(tx + Math.cos(a) * 0.2, h - 0.25, Math.sin(a) * 0.2)),
+    ], [0.6, 1.05]);
+    const cards = new Cards();
+    fronds(cards, tx, h);
+    M.palmFronds = cards.geometry();
   }
-  const birchCrown = finish(birchLobes, { jitter: 0.12, shade: [0.58, 1.16], seed: 8 });
 
-  // willow: thick leaning trunk, low dome and hanging curtains
-  const wh = 3.0, wb = 0.18, wtx = wb * wh;
-  const willowTrunk = finish([
-    trunk(wh, 0.55, 0.3, { bend: wb, flare: 1.8 }),
-    branch(1.6, 0.15, -0.8, 0.5, 2.4), branch(1.5, 0.14, 0.8, 2.6, 2.6), branch(1.4, 0.13, -0.7, 4.4, 2.5),
-  ], { shade: [0.5, 1.0] });
-  const willowDome = finish([
-    lobe(2.2, wtx, 4.3, 0, 0.6), lobe(1.6, wtx + 1.3, 4.0, 0.5, 0.6), lobe(1.6, wtx - 1.2, 4.1, -0.6, 0.6), lobe(1.4, wtx + 0.2, 4.7, -1.1, 0.6),
-  ], { jitter: 0.15, shade: [0.5, 1.05], seed: 7 });
-  const willowCurtain = finish([strands(wtx, 4.3)], { shade: [0.5, 1.1] });
+  // bush: a small ball of leaf cards
+  seed(7);
+  {
+    const cards = new Cards();
+    crown(cards, V(0, 0.6, 0), V(1.0, 0.65, 1.0), 26, 0.95, { outBias: 0.5 });
+    M.bush = cards.geometry();
+  }
 
-  return { birchTrunk, birchCrown, willowTrunk, willowDome, willowCurtain, broadTrunk, broadCrown, pineTrunk, pineLeaves, jungTrunk, jungCrown, palmTrunk, palmFronds, bush, cactus, rock };
+  // saguaro and rocks stay solid
+  const arm = (side, y, sc) => [
+    new THREE.CylinderGeometry(0.2 * sc, 0.2 * sc, 0.7 * sc, 8).rotateZ(Math.PI / 2).translate(side * 0.6 * sc, y, 0),
+    new THREE.CylinderGeometry(0.18 * sc, 0.21 * sc, 1.1 * sc, 8).translate(side * 0.9 * sc, y + 0.5 * sc, 0),
+    new THREE.SphereGeometry(0.18 * sc, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(side * 0.9 * sc, y + 1.05 * sc, 0),
+  ];
+  M.cactus = faceted([
+    new THREE.CylinderGeometry(0.36, 0.42, 3.1, 10, 3).translate(0, 1.55, 0),
+    new THREE.SphereGeometry(0.36, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 3.1, 0),
+    ...arm(1, 1.5, 1), ...arm(-1, 1.95, 0.8),
+  ], { jitter: 0.015, shade: [0.68, 1.06] });
+  M.rock = faceted([new THREE.DodecahedronGeometry(1, 2)], { jitter: 0.12, shade: [0.55, 1.08], moss: 0.85, seed: 6 });
+
+  return M;
 }
