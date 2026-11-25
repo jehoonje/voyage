@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { EYES, HAIR, HATS, TOPS, BOTTOMS, SHOES, ACCESSORIES, SKIN_TONES, HAIR_COLORS, IRIS_COLORS, GEAR_COLORS } from './character/parts.js';
 import { sanitize, saveSpec } from './character/character.js';
+import { WALK, RUN } from './physics.js';
 
 const HAT_C = { ballcap: 0x26282a, camp: 0xa07440, plaidcap: 0xffffff, mesh: 0xc8c0dc, bucket: 0xc8b490, rollbeanie: 0x3a3e46, pombeanie: 0xe8e2d4, bandana: 0x1e1e22, visor: 0xc8d4dc };
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -184,14 +185,12 @@ export function createCreator({ renderer, hero, onDone }) {
       // pose: idle / walk / run in place, or a hop
       mt += dt;
       P.y = 0; P.grounded = true; P.land = Math.max(0, P.land - dt * 3);
-      let mag = 0, run = false;
-      if (motion === 'walk') mag = 1;
-      else if (motion === 'run') { mag = 1; run = true; }
-      else if (motion === 'jump') {
+      const speed = motion === 'walk' ? WALK : motion === 'run' ? RUN : 0;
+      if (motion === 'jump') {
         const t = mt % 1.4, air = 0.62;
         if (t < air) { P.y = 4.2 * t * (air - t); P.grounded = false; } else if (t < air + dt * 1.5) P.land = 0.6;
       }
-      hero.animate(dt, P, mag, run, null);
+      hero.animate(dt, P, speed, null);
       hero.root.position.y = P.y;
       hero.root.rotation.y = 0;
 

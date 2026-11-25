@@ -7,7 +7,9 @@ import { BONES, BONE } from './rig.js';
 export const SCALE = 1.35; // model metres → world metres (about 1.7 m with hair)
 export const POSE_KEYS = ['drop', 'back', 'lean', 'twist', 'legL', 'legR', 'kneeL', 'kneeR',
   'armLX', 'armRX', 'armLZ', 'armRZ', 'elbowL', 'elbowR'];
-const QUALITY = 1.6; // grid coarsening for game-ready triangle counts
+const QUALITY = 1.6;
+const NECK_TUCK = 0.045; // model metres
+const WALK_REF = 3.6, RUN_REF = 7; // keep in step with physics WALK / RUN // grid coarsening for game-ready triangle counts
 const DROP_K = 0.42 / 0.93; // (model units) action poses were authored for a 0.93 m hip height
 
 /* ================= spec: what the player chose ================= */
@@ -98,6 +100,7 @@ function skinMat(color, freckles) {
   vec4 d = texture2D(uF, uv); diffuseColor.rgb = mix(diffuseColor.rgb, d.rgb, d.a * fr); }`)
       .replace('#include <opaque_fragment>', `float tt = 1. - abs(dot(normal, normalize(vViewPosition)));
 outgoingLight += vec3(.9, .35, .25) * .07 * smoothstep(.2, .8, tt);
+outgoingLight += diffuseColor.rgb * .24; // soft fill so faces stay readable in shade
 #include <opaque_fragment>`);
   };
   return m;
@@ -218,9 +221,9 @@ function partsFor(s) {
 /* ================= face (rigid on the head bone) ================= */
 function buildFace(face, s) {
   const E = EYES[s.eyes], skin = s.skin, hairColor = s.hairColor;
-  const r = 0.036, white = new THREE.MeshStandardMaterial({ color: 0xfbf8f2, roughness: 0.25 });
-  const iris = new THREE.MeshStandardMaterial({ color: s.iris, roughness: 0.3 }), pupil = new THREE.MeshBasicMaterial({ color: 0x120c08 });
-  const shine = new THREE.MeshBasicMaterial({ color: 0xffffff }), lidMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin).multiplyScalar(0.94), roughness: 0.55, emissive: new THREE.Color(skin).multiplyScalar(0.28) });
+  const r = 0.036, white = new THREE.MeshStandardMaterial({ color: 0xece6dc, roughness: 0.45, emissive: 0xece6dc, emissiveIntensity: 0.2 });
+  const iris = new THREE.MeshStandardMaterial({ color: s.iris, roughness: 0.35, emissive: s.iris, emissiveIntensity: 0.24 }), pupil = new THREE.MeshBasicMaterial({ color: 0x120c08 });
+  const shine = new THREE.MeshBasicMaterial({ color: 0xffffff }), lidMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin).multiplyScalar(0.94), roughness: 0.55, emissive: new THREE.Color(skin).multiplyScalar(0.24) });
   const lash = new THREE.MeshBasicMaterial({ color: 0x1c1410 }), browMat = plain(hairColor);
   const [sx, sy] = E.scale || [1, 1], cover = E.cover ?? 0.62, tilt = E.tilt ?? 0;
   const lids = [];
@@ -275,6 +278,7 @@ export function createCharacter(scene) {
     bones[i].position.set(b.pos[0] - p[0], b.pos[1] - p[1], b.pos[2] - p[2]);
     (b.parent < 0 ? root : bones[b.parent]).add(bones[i]);
   });
+  bones[BONE.head].position.y -= NECK_TUCK; // shorter neck: the head (and all it carries) rides lower
   const inverses = BONES.map((b) => new THREE.Matrix4().makeTranslation(-b.pos[0], -b.pos[1], -b.pos[2]));
   const skeleton = new THREE.Skeleton(bones, inverses);
   const J = Object.fromEntries(Object.entries(BONE).map(([k, i]) => [k, bones[i]]));
@@ -303,7 +307,8 @@ export function createCharacter(scene) {
     for (const m of meshes) { root.remove(m); m.material.dispose(); }
     meshes = list.map((p, i) => {
       const m = new THREE.SkinnedMesh(geos[i], p.mat());
-      m.castShadow = m.receiveShadow = true;
+      m.castShadow = true;
+      m.receiveShadow = p.kind !== 'head'; // hat and hair would otherwise throw the whole face into shade
       m.frustumCulled = false;
       root.add(m);
       m.bind(skeleton, IDENT);
@@ -316,52 +321,99 @@ export function createCharacter(scene) {
     return true;
   }
 
-  const cur = Object.fromEntries(POSE_KEYS.map((k) => [k, 0]));
+  // extra channels only locomotion drives (action poses leave them at 0)
+  const KEYS = [...POSE_KEYS, 'hipYaw', 'sway', 'shiftX', 'chestRoll', 'headX', 'headY', 'toeL', 'toeR'];
+  const cur = Object.fromEntries(KEYS.map((k) => [k, 0]));
   const tg = { ...cur };
-  let walkT = 0, breathT = 0, blinkT = 2;
+  let phase = 0, breathT = 0, blinkT = 2, moveW = 0, runW = 0, airT = 0;
+  const sat = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const pos = (v) => (v > 0 ? v : 0);
 
   return {
     root,
     get spec() { return spec; },
     get ready() { return meshes.length > 0; },
     apply,
-    /** target: action pose or null for locomotion (same contract as the old hero) */
-    animate(dt, p, mag, run, target) {
+    /**
+     * speed: actual ground speed (world m/s) so slopes and inertia show in the stride.
+     * target: action pose or null for locomotion.
+     */
+    animate(dt, p, speed, target) {
       let rate;
       breathT += dt;
       if (target) {
-        for (const k of POSE_KEYS) tg[k] = target[k] || 0;
+        for (const k of KEYS) tg[k] = target[k] || 0;
         rate = 9;
       } else {
-        walkT += dt * (mag > 0 ? (run ? 11 : 8) : 0);
-        const amp = (p.swim ? 0.45 : run ? 0.85 : 0.6) * Math.min(1, mag * 1.5);
-        const sw = mag > 0 ? Math.sin(walkT) * amp : 0;
-        const knee = (ph) => (mag > 0 ? (0.1 + (run ? 1.3 : 0.75) * Math.max(0, Math.sin(ph - 0.9))) * Math.min(1, mag * 1.5) : 0.04);
+        // walk ↔ run blend follows speed, eased so starts and stops don't snap
+        const mw = sat(speed / 1.6), rw = sat((speed - WALK_REF * 1.05) / (RUN_REF - WALK_REF * 1.05));
+        moveW += (mw - moveW) * Math.min(1, dt * 7);
+        runW += (rw - runW) * Math.min(1, dt * 5);
+        // stride frequency rises with speed (cycles per second), phase advances with distance travelled
+        const freq = p.swim ? 0.7 : 0.55 + 0.13 * Math.min(speed, RUN_REF);
+        phase += dt * freq * Math.PI * 2 * (speed > 0.05 ? 1 : 0);
+        const w = moveW, r = runW, f = phase;
+        const sL = Math.sin(f), sR = -sL, cL = Math.cos(f);
+        const legA = (0.42 + 0.3 * r) * w;
+        // knee bends while the leg swings forward, a little give at heel strike
+        const knee = (ph) => (0.05 + (0.08 + 0.04 * r) * pos(Math.sin(ph + 2.2)) + (0.7 + 0.75 * r) * Math.pow(pos(-Math.cos(ph - 0.35)), 1.4)) * w + 0.04 * (1 - w);
+        const toe = (ph) => (0.45 * pos(Math.sin(ph) - 0.35) - 0.22 * pos(-Math.sin(ph) - 0.55) * (1 - r)) * w;
+        const armA = (0.38 + 0.35 * r) * w, lag = 0.3;
+        const idle = 1 - w;
         Object.assign(tg, {
-          drop: mag > 0 ? -Math.abs(Math.cos(walkT)) * (run ? 0.05 : 0.025) : -0.005 * Math.sin(breathT * 1.8),
-          back: 0, lean: run && mag ? 0.18 : mag ? 0.05 : 0, twist: sw * 0.12,
-          legL: sw, legR: -sw, kneeL: knee(walkT + Math.PI), kneeR: knee(walkT),
-          armLX: -sw * 0.9, armRX: sw * 0.9, elbowL: run ? -1.2 : -0.25, elbowR: run ? -1.2 : -0.25,
-          armLZ: p.swim ? -0.9 + Math.sin(walkT) * 0.3 : -0.06,
-          armRZ: p.swim ? 0.9 - Math.sin(walkT) * 0.3 : 0.06,
+          // two dips per cycle: low on contact when walking, at mid-stance when running
+          drop: -(0.035 * (1 - r) * Math.abs(sL) + 0.075 * r * (1 - Math.abs(sL))) * w - (0.02 * r) - 0.006 * idle * (1 + Math.sin(breathT * 1.7)),
+          back: 0,
+          lean: 0.05 * w + 0.17 * r + 0.03 * r * Math.cos(2 * f) + 0.012 * idle * Math.sin(breathT * 1.7),
+          twist: 0,
+          hipYaw: -(0.1 + 0.08 * r) * sL * w,
+          sway: (0.07 - 0.03 * r) * cL * w + 0.025 * idle * Math.sin(breathT * 0.45),
+          shiftX: -0.012 * cL * w * (1 - r) + 0.006 * idle * Math.sin(breathT * 0.45),
+          chestRoll: -0.05 * cL * w,
+          headX: 0.03 * Math.cos(2 * f) * w + 0.015 * idle * Math.sin(breathT * 0.6),
+          headY: 0.05 * idle * Math.sin(breathT * 0.31),
+          legL: legA * sL - 0.06 * r * w, legR: legA * sR - 0.06 * r * w,
+          kneeL: knee(f), kneeR: knee(f + Math.PI),
+          toeL: toe(f), toeR: toe(f + Math.PI),
+          armLX: -armA * Math.sin(f - lag) - 0.05 * r * w, armRX: armA * Math.sin(f - lag) - 0.05 * r * w,
+          elbowL: -(0.22 + 0.25 * w * pos(Math.sin(f - lag + Math.PI)) + 1.05 * r - 0.2 * r * Math.sin(f - lag)),
+          elbowR: -(0.22 + 0.25 * w * pos(Math.sin(f - lag)) + 1.05 * r + 0.2 * r * Math.sin(f - lag)),
+          armLZ: -0.07 - 0.07 * r - 0.02 * idle * Math.sin(breathT * 1.7),
+          armRZ: 0.07 + 0.07 * r + 0.02 * idle * Math.sin(breathT * 1.7),
         });
+        if (p.swim) {
+          Object.assign(tg, {
+            armLZ: -0.9 + Math.sin(f) * 0.35, armRZ: 0.9 - Math.sin(f) * 0.35, armLX: -0.3 + Math.cos(f) * 0.3, armRX: -0.3 - Math.cos(f) * 0.3,
+            elbowL: -0.5, elbowR: -0.5, legL: 0.3 * sL, legR: 0.3 * sR, kneeL: 0.3, kneeR: 0.3, lean: 0.25, drop: 0, hipYaw: 0,
+          });
+        }
+        // airborne: knees tuck at the top of the jump, arms lift for balance
+        airT = !p.grounded && !p.swim ? airT + dt : 0;
+        if (airT > 0) {
+          const a = sat(airT * 6);
+          tg.kneeL += 0.7 * a; tg.kneeR += 0.35 * a; tg.legL -= 0.45 * a; tg.legR -= 0.1 * a;
+          tg.armLZ -= 0.35 * a; tg.armRZ += 0.35 * a; tg.armLX -= 0.2 * a; tg.armRX += 0.15 * a; tg.elbowL -= 0.3 * a; tg.elbowR -= 0.3 * a;
+          tg.toeL += 0.25 * a; tg.toeR += 0.25 * a;
+        }
         const lk = p.land || 0; // landing squash, 0..1
         tg.drop -= 0.22 * lk; tg.lean += 0.25 * lk; tg.legL -= 0.6 * lk; tg.legR -= 0.6 * lk;
         tg.kneeL += 1.1 * lk; tg.kneeR += 1.1 * lk; tg.armLZ -= 0.4 * lk; tg.armRZ += 0.4 * lk;
-        if (!p.grounded && !p.swim) { tg.kneeL += 0.6; tg.kneeR += 0.3; tg.legL -= 0.3; }
-        rate = 22;
+        rate = 30;
       }
       const a = Math.min(1, dt * rate);
-      for (const k of POSE_KEYS) cur[k] += (tg[k] - cur[k]) * a;
+      for (const k of KEYS) cur[k] += (tg[k] - cur[k]) * a;
 
       root.position.set(p.x, p.y, p.z);
       root.rotation.y = p.face;
-      J.hips.position.set(rest[0].x, rest[0].y + cur.drop * DROP_K, rest[0].z + cur.back * DROP_K);
-      J.spine.rotation.set(cur.lean, cur.twist, 0);
-      J.head.rotation.set(-cur.lean * 0.5, -cur.twist * 0.6, 0); // keep the gaze level
-      J.thighL.rotation.x = cur.legL; J.thighR.rotation.x = cur.legR;
+      J.hips.position.set(rest[0].x + cur.shiftX, rest[0].y + cur.drop * DROP_K, rest[0].z + cur.back * DROP_K);
+      J.hips.rotation.set(0, cur.hipYaw, cur.sway);
+      // shoulders counter-rotate against the pelvis; spine leans
+      J.spine.rotation.set(cur.lean, cur.twist - cur.hipYaw * 1.8, cur.chestRoll - cur.sway * 1.2);
+      // head stays level and looks ahead whatever the body does
+      J.head.rotation.set(-cur.lean * 0.6 + cur.headX, cur.hipYaw * 0.8 - cur.twist * 0.6 + cur.headY, -(cur.chestRoll - cur.sway * 0.2) * 0.8);
+      J.thighL.rotation.set(cur.legL, 0, -cur.sway); J.thighR.rotation.set(cur.legR, 0, -cur.sway);
       J.shinL.rotation.x = cur.kneeL; J.shinR.rotation.x = cur.kneeR;
-      J.footL.rotation.x = -(cur.legL + cur.kneeL) * 0.6; J.footR.rotation.x = -(cur.legR + cur.kneeR) * 0.6;
+      J.footL.rotation.x = -(cur.legL + cur.kneeL) * 0.85 + cur.toeL; J.footR.rotation.x = -(cur.legR + cur.kneeR) * 0.85 + cur.toeR;
       J.upperArmL.rotation.set(cur.armLX, 0, cur.armLZ); J.upperArmR.rotation.set(cur.armRX, 0, cur.armRZ);
       J.foreArmL.rotation.x = cur.elbowL; J.foreArmR.rotation.x = cur.elbowR;
       axe.visible = !!(target && target.axe);

@@ -3,7 +3,7 @@
 // collision with trunks / rocks / cactus / fires, hopping onto rocks, buoyant swimming.
 import { sample } from './world.js';
 
-export const WALK = 7.5, RUN = 15;
+export const WALK = 3.6, RUN = 7;
 export const SWIM_DEPTH = -1.15, SWIM_Y = -1.1;
 const G = 26, RADIUS = 0.35, JUMP_V = 9.5;
 const RATE = { ground: 9, brake: 12, air: 1.6, water: 3 }; // how fast velocity follows input (1/s)

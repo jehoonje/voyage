@@ -17,7 +17,7 @@ import { createCampfires } from './campfire.js';
 import { createForestry } from './forestry.js';
 import { createActions } from './actions.js';
 import { createInventory } from './inventory.js';
-import { createPhysics, WALK, SWIM_Y } from './physics.js';
+import { createPhysics, SWIM_Y } from './physics.js';
 import { createPost } from './post.js';
 
 // Keep the authored (non-linear) colours looking as designed.
@@ -140,7 +140,7 @@ function step(now) {
 
   // animate from actual ground speed so inertia and slopes show in the stride
   const hs = Math.hypot(P.vx, P.vz);
-  hero.animate(dt, P, Math.min(1, hs / WALK), hs > WALK * 1.3, actPose);
+  hero.animate(dt, P, hs, actPose);
 
   // third-person camera, kept above terrain
   // trees between hero and camera dissolve (see forestry.occlude)

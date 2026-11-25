@@ -6,7 +6,7 @@ import { cone, ellipsoid, roundBox, smin, smax } from './sculpt.js';
 const cl = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* ================= skeleton landmarks (rest pose, model metres) ================= */
-export const ARM = (s) => ({ sh: [s * 0.135, 0.685, 0], el: [s * 0.162, 0.53, -0.012], wr: [s * 0.176, 0.385, 0.008] });
+export const ARM = (s) => ({ sh: [s * 0.13, 0.672, 0], el: [s * 0.162, 0.53, -0.012], wr: [s * 0.176, 0.385, 0.008] });
 export const LEG = (s) => ({ hip: [s * 0.058, 0.42, 0], kn: [s * 0.064, 0.23, 0.008], an: [s * 0.068, 0.088, 0] });
 export const HEAD_PIVOT = [0, 0.88, 0];
 
@@ -14,9 +14,11 @@ export const HEAD_PIVOT = [0, 0.88, 0];
 function torsoBody(x, y, z) {
   let d = ellipsoid(x, y, z, [0, 0.61, 0], [0.105, 0.13, 0.074]);
   d = smin(d, ellipsoid(x, y, z, [0, 0.47, 0], [0.1, 0.08, 0.074]), 0.05);
-  return smin(d, cone(x, y, z, [-0.12, 0.69, -0.005], [0.12, 0.69, -0.005], 0.036, 0.036), 0.05);
+  // sloped shoulder line rather than a bar across the top
+  for (const s of [-1, 1]) d = smin(d, cone(x, y, z, [0, 0.72, -0.005], [s * 0.112, 0.668, -0.005], 0.034, 0.026), 0.05);
+  return d;
 }
-const armBody = (x, y, z, a) => smin(cone(x, y, z, a.sh, a.el, 0.031, 0.026), cone(x, y, z, a.el, a.wr, 0.025, 0.02), 0.02);
+const armBody = (x, y, z, a) => smin(cone(x, y, z, a.sh, a.el, 0.027, 0.024), cone(x, y, z, a.el, a.wr, 0.023, 0.019), 0.02);
 const legBody = (x, y, z, l) => smin(cone(x, y, z, l.hip, l.kn, 0.046, 0.03), cone(x, y, z, l.kn, l.an, 0.03, 0.021), 0.025);
 const L0 = LEG(-1), L1 = LEG(1);
 const bothLegs = (x, y, z) => Math.min(legBody(x, y, z, L0), legBody(x, y, z, L1));
@@ -64,14 +66,14 @@ function makeTop(o) {
     if (o.hood !== 'none') d = smin(d, ellipsoid(x, y, z, [0, 0.745, -0.062], [0.1, 0.045, 0.06]), 0.03); // hood roll
     if (o.collar !== false) d = smin(d, smax(Math.abs(cone(x, y, z, [0, 0.69, 0], [0, 0.785, -0.005], 0.066, 0.056)) - 0.012, Math.max(0.69 - y, y - 0.785), 0.006), 0.02);
     for (const a of arms) {
-      let sl = armBody(x, y, z, a) - (o.sleeve ?? 0.016);
+      let sl = armBody(x, y, z, a) - (o.sleeve ?? 0.014);
       const lo = cone(x, y, z, a.el, a.wr, 0, 0, tmp), h2 = tmp.h, up = cone(x, y, z, a.sh, a.el, 0, 0);
       if (o.short) { cone(x, y, z, a.sh, a.el, 0, 0, tmp); sl = smax(sl, up < lo ? (tmp.h - 0.55) * 0.155 : 1, 0.008); }
       else {
         if (o.cuffCinch && up >= lo) sl -= 0.008 * Math.exp(-((h2 - 0.78) ** 2) / 0.006); // gathered above the cuff
         if (up >= lo) sl = smax(sl, (h2 - 0.93) * 0.15, 0.008);
       }
-      d = smin(d, sl, 0.01 + 0.045 * cl((y - 0.6) / 0.1, 0, 1));
+      d = smin(d, sl, 0.012 + 0.022 * cl((y - 0.6) / 0.1, 0, 1));
     }
     return smax(d, hem - y, 0.014);
   };
