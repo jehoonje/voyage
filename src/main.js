@@ -8,6 +8,8 @@ import { createHero } from './hero.js';
 import { createInput } from './input.js';
 import { createProgress } from './progress.js';
 import { createMap } from './map.js';
+import { createGrass } from './grass.js';
+import { windTime } from './wind.js';
 
 // Keep the authored (non-linear) colours looking as designed.
 THREE.ColorManagement.enabled = false;
@@ -30,6 +32,7 @@ const env = createEnvironment(scene);
 const world = new ChunkManager(scene);
 const hero = createHero(scene);
 const progress = createProgress();
+const grass = createGrass(scene);
 
 const SWIM_DEPTH = -1.15, SWIM_Y = -1.1;
 const P = { x: 0, y: 0, z: 0, vy: 0, face: 0, grounded: true, swim: false };
@@ -97,6 +100,8 @@ function step(now) {
   world.update(P.x, P.z);
   world.pump(2);
   world.cull(camera);
+  windTime.value = now / 1000;
+  grass.update(P.x, P.z);
   env.update(dt, now, P.x, P.z);
   progress.explore(P.x, P.z);
   if (map.open && mag > 0) map.request();

@@ -1,5 +1,6 @@
 // Low-poly vegetation library: shared geometries, materials and per-biome spawn rules.
 import * as THREE from 'three';
+import { windTime } from './wind.js';
 
 function facet(g) { g = g.toNonIndexed(); g.computeVertexNormals(); return g; }
 
@@ -22,6 +23,19 @@ const G = {
 const Lm = (c) => new THREE.MeshLambertMaterial({ color: c });
 const M = {
   trunk: Lm(0x6b4a2f), palmT: Lm(0x8a6b45), tint: Lm(0xffffff), cact: Lm(0x4f8a4a), rock: Lm(0x8f8a84),
+};
+// foliage sways in the wind: the higher above the trunk base, the more it moves
+M.tint.onBeforeCompile = (sh) => {
+  sh.uniforms.uTime = windTime;
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\nuniform float uTime;')
+    .replace('#include <begin_vertex>', `#include <begin_vertex>
+#ifdef USE_INSTANCING
+  vec3 ip = instanceMatrix[3].xyz;
+  float sway = max(transformed.y - 2.2, 0.);
+  transformed.x += sin(uTime * 1.3 + ip.x * .21 + ip.z * .17) * .05 * sway;
+  transformed.z += cos(uTime * 1.1 + ip.x * .13 - ip.z * .09) * .04 * sway;
+#endif`);
 };
 
 /** base foliage colours, varied per instance */
