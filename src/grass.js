@@ -34,6 +34,7 @@ function tuftGeometry() {
 const VERT = /* glsl */ `
 #include <common>
 #include <fog_pars_vertex>
+#include <shadowmap_pars_vertex>
 attribute vec4 aOff;   // world xyz, scale (0 = hidden)
 attribute vec3 aCol;
 uniform float uTime; uniform vec3 uPlayer; uniform float uRadius;
@@ -59,15 +60,23 @@ void main(){
   vCol = aCol * (.7 + 1.0 * h) + vec3(.08, .07, 0.) * hh + vec3(.06) * gust * hh;
   vec4 mvPosition = viewMatrix * vec4(wp, 1.);
   gl_Position = projectionMatrix * mvPosition;
+  vec4 worldPosition = vec4(wp, 1.);
+  vec3 transformedNormal = (viewMatrix * vec4(0., 1., 0., 0.)).xyz;
+  #include <shadowmap_vertex>
   #include <fog_vertex>
 }`;
 
 const FRAG = /* glsl */ `
 #include <common>
+#include <packing>
 #include <fog_pars_fragment>
+#include <bsdfs>
+#include <lights_pars_begin>
+#include <shadowmap_pars_fragment>
+#include <shadowmask_pars_fragment>
 varying vec3 vCol;
 void main(){
-  gl_FragColor = vec4(vCol, 1.);
+  gl_FragColor = vec4(vCol * mix(.55, 1., getShadowMask()), 1.);
   #include <fog_fragment>
 }`;
 
@@ -82,13 +91,14 @@ export function createGrass(scene) {
   geo.setAttribute('aCol', col);
   geo.instanceCount = N;
 
-  const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+  const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, THREE.UniformsLib.lights, {
     uPlayer: { value: new THREE.Vector3() }, uRadius: { value: RADIUS },
   }]);
   uniforms.uTime = windTime; // shared reference, not a copy
-  const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, fog: true, side: THREE.DoubleSide });
+  const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, fog: true, lights: true, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
+  mesh.receiveShadow = true;
   scene.add(mesh);
 
   const cellX = new Int32Array(N).fill(1 << 30), cellZ = new Int32Array(N).fill(1 << 30);

@@ -1,4 +1,4 @@
-// Blocky caped explorer with walk / swim animation and a blob shadow.
+// Blocky caped explorer with walk / swim animation.
 import * as THREE from 'three';
 
 export function createHero(scene) {
@@ -11,6 +11,7 @@ export function createHero(scene) {
   };
   const box = (w, h, d, m, x, y, z, parent = root) => {
     const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    o.castShadow = true;
     o.position.set(x, y, z);
     parent.add(o);
     return o;
@@ -32,18 +33,12 @@ export function createHero(scene) {
   const legL = limb(-0.18, 0.78, 0.26, 0.78, M.leather), legR = limb(0.18, 0.78, 0.26, 0.78, M.leather);
   const armL = limb(-0.47, 1.52, 0.2, 0.72, M.tunic), armR = limb(0.47, 1.52, 0.2, 0.72, M.tunic);
 
-  const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.7, 16),
-    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false }),
-  );
-  shadow.rotation.x = -Math.PI / 2;
-  scene.add(shadow);
 
   let walkT = 0;
   return {
     root,
-    /** p: player state; mag: input 0..1; run: bool; groundY: terrain height */
-    animate(dt, p, mag, run, groundY) {
+    /** p: player state; mag: input 0..1; run: bool */
+    animate(dt, p, mag, run) {
       root.position.set(p.x, p.y, p.z);
       root.rotation.y = p.face;
       walkT += dt * (mag > 0 ? (run ? 13 : 9) : 0);
@@ -57,8 +52,6 @@ export function createHero(scene) {
         armL.rotation.z = armR.rotation.z = 0;
       }
       cape.rotation.x = -0.1 - mag * (run ? 0.6 : 0.3) - (p.grounded ? 0 : 0.3);
-      shadow.position.set(p.x, Math.max(groundY, 0) + 0.05, p.z);
-      shadow.visible = !p.swim;
     },
   };
 }

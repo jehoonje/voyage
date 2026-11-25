@@ -18,6 +18,8 @@ const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: devicePixelRatio < 2 });
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, 320);
 function resize() {
@@ -87,7 +89,7 @@ function step(now) {
   else if (P.y - floor > 0.25 && !P.swim) P.grounded = false;
   if (P.swim) { P.y = mix(P.y, SWIM_Y, Math.min(1, dt * 6)); P.vy = 0; P.grounded = true; }
 
-  hero.animate(dt, P, mag, inp.run, ground);
+  hero.animate(dt, P, mag, inp.run);
 
   // third-person camera, kept above terrain
   const cd = cam.dist * Math.cos(cam.pitch);
@@ -99,10 +101,10 @@ function step(now) {
 
   world.update(P.x, P.z);
   world.pump(2);
-  world.cull(camera);
+  world.cull(camera, P.x, P.z);
   windTime.value = now / 1000;
   grass.update(P.x, P.z);
-  env.update(dt, now, P.x, P.z);
+  env.update(dt, now, P.x, P.z, P.y);
   progress.explore(P.x, P.z);
   if (map.open && mag > 0) map.request();
   renderer.render(scene, camera);

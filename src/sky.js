@@ -9,8 +9,23 @@ export function createEnvironment(scene) {
   // intensities ×π: three ≥r155 uses physical light units
   scene.add(new THREE.HemisphereLight(0xd8ecff, 0x5b6440, 0.95 * Math.PI));
   const sun = new THREE.DirectionalLight(0xfff0d0, 0.85 * Math.PI);
-  sun.position.set(0.5, 1, 0.3);
-  scene.add(sun);
+  const SUN_DIR = new THREE.Vector3(0.55, 0.78, 0.32).normalize();
+  scene.add(sun, sun.target);
+
+  // Shadow box follows the player; size trades sharpness for coverage.
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const MAP = touch ? 1024 : 2048, EXT = touch ? 40 : 55;
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(MAP, MAP);
+  Object.assign(sun.shadow.camera, { left: -EXT, right: EXT, top: EXT, bottom: -EXT, near: 1, far: 320 });
+  sun.shadow.camera.updateProjectionMatrix();
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.35;
+  // light-space axes, used to snap the shadow box to whole texels (stops shimmering)
+  const lz = SUN_DIR.clone().negate();
+  const lx = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), lz).normalize();
+  const ly = new THREE.Vector3().crossVectors(lz, lx);
+  const texel = (EXT * 2) / MAP, focus = new THREE.Vector3();
 
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(700, 700),
@@ -35,7 +50,13 @@ export function createEnvironment(scene) {
   }
 
   return {
-    update(dt, now, px, pz) {
+    sun,
+    update(dt, now, px, pz, py = 0) {
+      focus.set(px, py, pz);
+      const u = focus.dot(lx), v = focus.dot(ly);
+      focus.addScaledVector(lx, Math.round(u / texel) * texel - u).addScaledVector(ly, Math.round(v / texel) * texel - v);
+      sun.target.position.copy(focus);
+      sun.position.copy(focus).addScaledVector(SUN_DIR, 150);
       water.position.set(Math.round(px / 50) * 50, Math.sin(now * 0.001) * 0.06, Math.round(pz / 50) * 50);
       for (const c of clouds) {
         c.position.x += dt * 2;

@@ -62,7 +62,9 @@ export class ChunkManager {
     geo.computeBoundingSphere();
 
     const group = new THREE.Group();
-    group.add(new THREE.Mesh(geo, this.mat));
+    const ground = new THREE.Mesh(geo, this.mat);
+    ground.receiveShadow = true;
+    group.add(ground);
     const meshes = this._vegetation(cx, cz, group);
 
     this.scene.add(group);
@@ -90,6 +92,7 @@ export class ChunkManager {
       for (const [g, mat, tint] of TYPES[t]) {
         const im = new THREE.InstancedMesh(g, mat, cnt);
         im.frustumCulled = false; // culled per chunk instead
+        im.castShadow = true;
         for (let q = 0; q < cnt; q++) {
           const rr = L[q * 4 + 3], sc = t === 'rock' ? 0.6 + rr * 1.6 : 0.75 + rr * 0.6;
           dummy.position.set(L[q * 4], L[q * 4 + 1], L[q * 4 + 2]);
@@ -144,9 +147,13 @@ export class ChunkManager {
     }
   }
 
-  cull(camera) {
+  /** hide chunks outside the view, but keep nearby ones so they still cast shadows into it */
+  cull(camera, px, pz) {
     this._pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this._frustum.setFromProjectionMatrix(this._pm);
-    for (const c of this.chunks.values()) c.group.visible = this._frustum.intersectsSphere(c.sphere);
+    for (const c of this.chunks.values()) {
+      const dx = c.sphere.center.x - px, dz = c.sphere.center.z - pz;
+      c.group.visible = this._frustum.intersectsSphere(c.sphere) || Math.hypot(dx, dz) < c.sphere.radius + 60;
+    }
   }
 }
