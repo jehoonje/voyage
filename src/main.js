@@ -7,6 +7,8 @@ import { createEnvironment } from './sky.js';
 import { createCharacter, loadSpec } from './character/character.js';
 import { DEFAULT_SPEC } from './character/parts.js';
 import { createCreator } from './creator.js';
+import { preventPageZoom } from './nozoom.js';
+preventPageZoom();
 import { createInput } from './input.js';
 import { createProgress } from './progress.js';
 import { createMap } from './map.js';
@@ -57,6 +59,7 @@ const physics = createPhysics(world, fires);
 
 const P = { x: 0, y: 0, z: 0, vx: 0, vz: 0, vy: 0, face: 0, grounded: true, swim: false, jumping: false, sliding: false, land: 0 };
 const cam = { yaw: 0.6, pitch: 0.38, dist: 9, cur: 9 };
+const PITCH_MIN = -0.95, PITCH_MAX = 1.35, DIST_MIN = 2.2, DIST_MAX = 24;
 
 const map = createMap(progress, () => P);
 const inventory = createInventory(progress);
@@ -64,8 +67,9 @@ const actions = createActions({ P, fires, fx, progress, onPickup: (t) => invento
 const input = createInput({
   onJump() { if (!actions.busy) physics.jump(P); },
   onMap: () => map.toggle(),
-  onLook(dx, dy) { cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch + dy * 0.004, 0.05, 1.25); },
-  onZoom(d) { cam.dist = clamp(cam.dist + d * 0.01, 4, 18); },
+  onLook(dx, dy) { cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch + dy * 0.004, PITCH_MIN, PITCH_MAX); },
+  // d > 0 zooms out; multiplicative so it feels the same near and far
+  onZoom(d) { cam.dist = clamp(cam.dist * Math.exp(d * 0.0015), DIST_MIN, DIST_MAX); },
 });
 
 function findSpawn() {
@@ -117,12 +121,13 @@ function step(now) {
   // movement relative to camera
   const inp = input.read();
   const actPose = actions.update(dt, now);
-  let mag = actions.busy ? 0 : inp.mag;
+  const frozen = actions.busy || hero.edging;
+  let mag = frozen ? 0 : inp.mag;
   const fwdX = -Math.sin(cam.yaw), fwdZ = -Math.cos(cam.yaw), rgtX = Math.cos(cam.yaw), rgtZ = -Math.sin(cam.yaw);
   let mx = fwdX * -inp.y + rgtX * inp.x, mz = fwdZ * -inp.y + rgtZ * inp.x;
   const ml = Math.hypot(mx, mz);
   let wx = 0, wz = 0;
-  if (!actions.busy && ml > 0.01 && mag > 0.08) {
+  if (!frozen && ml > 0.01 && mag > 0.08) {
     mx /= ml; mz /= ml;
     wx = mx * mag; wz = mz * mag;
     let d = Math.atan2(mx, mz) - P.face;
@@ -130,7 +135,11 @@ function step(now) {
     P.face += d * Math.min(1, dt * 12);
   }
   if (actions.busy) { P.vx *= 0.8; P.vz *= 0.8; }
+  const wasSwim = P.swim;
   const ph = physics.step(P, dt, wx, wz, inp.run && !actions.busy);
+  if (wasSwim && !P.swim && P.grounded && P.y - SWIM_Y > 0.35) { // reached a bank: haul out
+    hero.edge(P.y - SWIM_Y); P.vx *= 0.2; P.vz *= 0.2;
+  }
   if (ph.impact > 11) {
     P.land = Math.min(1, (ph.impact - 9) / 10);
     fx.smoke(P.x, P.y + 0.1, P.z, 3);
@@ -145,13 +154,16 @@ function step(now) {
   // third-person camera, kept above terrain
   // trees between hero and camera dissolve (see forestry.occlude)
   const headY = P.y + 1.3;
-  const ox = Math.sin(cam.yaw) * Math.cos(cam.pitch), oy = Math.sin(cam.pitch), oz = Math.cos(cam.yaw) * Math.cos(cam.pitch);
-  forestry.occlude(dt, P.x, headY, P.z, P.x + ox * (cam.dist + 1), headY + oy * (cam.dist + 1), P.z + oz * (cam.dist + 1));
-  cam.cur = cam.dist;
+  // below the horizon the camera stays low behind the hiker and tilts up toward the sky instead of digging into the ground
+  const up = Math.max(0, -cam.pitch) / -PITCH_MIN; // 0..1 how far we're looking up
+  const orbit = cam.pitch > 0 ? cam.pitch : cam.pitch * 0.25;
+  const ox = Math.sin(cam.yaw) * Math.cos(orbit), oy = Math.sin(orbit), oz = Math.cos(cam.yaw) * Math.cos(orbit);
+  cam.cur += (cam.dist * (1 - 0.45 * up) - cam.cur) * Math.min(1, dt * 10);
+  forestry.occlude(dt, P.x, headY, P.z, P.x + ox * (cam.cur + 1), headY + oy * (cam.cur + 1), P.z + oz * (cam.cur + 1));
   const cx = P.x + ox * cam.cur, cz = P.z + oz * cam.cur;
-  const cy = Math.max(headY + oy * cam.cur, Math.max(sample(cx, cz).h, 0) + 1.2);
+  const cy = Math.max(headY + oy * cam.cur, Math.max(sample(cx, cz).h, 0) + 0.6);
   camera.position.set(cx, cy, cz);
-  camera.lookAt(P.x, headY, P.z);
+  camera.lookAt(P.x, headY + Math.tan(up * 1.15) * cam.cur, P.z);
   camera.updateMatrixWorld();
 
   world.update(P.x, P.z);

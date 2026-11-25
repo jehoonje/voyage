@@ -1,6 +1,6 @@
 // Mixamo FBX (in place, without skin) → compact clips for our 16-bone hiker.
 // Works with clips exported with or without "In Place" (forward travel is removed).
-// Usage: node tools/mocap-convert.mjs Walking.fbx Running.fbx > src/character/mocap.js
+// Usage: node tools/mocap-convert.mjs Walking.fbx Running.fbx Swimming.fbx Swimming_To_Edge.fbx > src/character/mocap.js
 // Limbs are retargeted by segment direction (so Mixamo's T-pose and our arms-down rest don't matter),
 // the trunk and head by world rotation relative to Mixamo's rest.
 import fs from 'fs';
@@ -28,7 +28,13 @@ function load(file) {
   return { obj, bone, clip: obj.animations[0] };
 }
 
-function convert(file) {
+/**
+ * opt.lean: take out part of the trunk's forward lean (upright clips); opt.stride: open up leg swing;
+ * opt.headUp: lift the head toward upright (prone swimming); opt.armsOut: push arms away from the jacket; opt.fps; opt.from/to: seconds of the clip to keep;
+ * opt.align: start the loop at our left heel strike; opt.speed: 'feet' (planted foot) or 'root' (root travel)
+ */
+function convert(file, opt) {
+  const { lean = 0.5, headUp = 0, stride = 1, armsOut = 0.16, fps = FPS, from = 0, to = Infinity, align = false, speed: speedBy = 'feet' } = opt;
   const { obj, bone, clip } = load(file);
   obj.updateMatrixWorld(true);
   const wp = (n) => bone[n].getWorldPosition(new THREE.Vector3());
@@ -42,7 +48,7 @@ function convert(file) {
 
   const mixer = new THREE.AnimationMixer(obj);
   mixer.clipAction(clip).play();
-  const n = Math.round(clip.duration * FPS);
+  const t0 = from, t1 = Math.min(to, clip.duration), n = Math.round((t1 - t0) * fps);
   const ourRest = (name, a, b) => V(BONES[BONE[name]].seg[b === undefined ? 1 : b]).sub(V(BONES[BONE[name]].seg[0]));
   const restDir = {
     upperArmL: V(BONES[BONE.foreArmL].pos).sub(V(BONES[BONE.upperArmL].pos)), foreArmL: V(BONES[BONE.handL].pos).sub(V(BONES[BONE.foreArmL].pos)),
@@ -52,14 +58,15 @@ function convert(file) {
   };
   const frames = [], hips = [], feet = [];
   for (let f = 0; f < n; f++) {
-    mixer.setTime((f / n) * clip.duration);
+    mixer.setTime(t0 + (f / n) * (t1 - t0));
     obj.updateMatrixWorld(true);
     const W = {};
     const delta = (m) => wq(m).multiply(restQ[m].clone().invert());
-    W.hips = level(delta('Hips'), 0.5);
-    W.spine = level(delta('Spine2'), 0.5);
+    W.hips = level(delta('Hips'), lean);
+    W.spine = level(delta('Spine2'), lean);
     W.neck = W.spine.clone();
-    W.head = level(W.spine.clone().slerp(delta('Head'), 0.6), 0.85, 0.6); // big head: keep it level, eyes ahead
+    const head = W.spine.clone().slerp(delta('Head'), 0.6); // big head: let it bob less
+    W.head = lean ? level(head, 0.85, 0.6) : headUp ? level(head, headUp, 0.5) : head; // keep the eyes ahead
     const seg = (a, b, side, out = 0, amp = 1) => {
       const d = wp(b).sub(wp(a)).normalize();
       if (amp !== 1) { // widen the swing in the side view (angle from straight down)
@@ -70,11 +77,11 @@ function convert(file) {
       return d;
     };
     for (const [s, m, sd] of [['L', mixL, -1], ['R', mixR, 1]]) {
-      W['upperArm' + s] = arc(restDir['upperArm' + s], seg(m + 'Arm', m + 'ForeArm', sd, 0.16));
-      W['foreArm' + s] = arc(restDir['foreArm' + s], seg(m + 'ForeArm', m + 'Hand', sd, 0.1));
+      W['upperArm' + s] = arc(restDir['upperArm' + s], seg(m + 'Arm', m + 'ForeArm', sd, armsOut));
+      W['foreArm' + s] = arc(restDir['foreArm' + s], seg(m + 'ForeArm', m + 'Hand', sd, armsOut * 0.6));
       W['hand' + s] = W['foreArm' + s].clone();
-      W['thigh' + s] = arc(restDir['thigh' + s], seg(m + 'UpLeg', m + 'Leg', sd, 0.02, STRIDE));
-      W['shin' + s] = arc(restDir['shin' + s], seg(m + 'Leg', m + 'Foot', sd, 0.02, STRIDE));
+      W['thigh' + s] = arc(restDir['thigh' + s], seg(m + 'UpLeg', m + 'Leg', sd, 0.02, stride));
+      W['shin' + s] = arc(restDir['shin' + s], seg(m + 'Leg', m + 'Foot', sd, 0.02, stride));
       W['foot' + s] = arc(restFoot[s], wp(m + 'ToeBase').sub(wp(m + 'Foot')));
     }
     // world → local through our hierarchy
@@ -88,18 +95,18 @@ function convert(file) {
     feet.push({ L: wp(mixL + 'Foot').sub(hp), R: wp(mixR + 'Foot').sub(hp), Ly: wp(mixL + 'ToeBase').y, Ry: wp(mixR + 'ToeBase').y });
   }
   // phase 0 = our left foot furthest forward (heel strike)
-  let f0 = 0; for (let f = 1; f < n; f++) if (feet[f].L.z > feet[f0].L.z) f0 = f;
+  let f0 = 0; if (align) for (let f = 1; f < n; f++) if (feet[f].L.z > feet[f0].L.z) f0 = f;
   // ground speed: how fast a planted foot slides back under the body (cm/s → model m/s)
   const vs = [];
   for (const s of ['L', 'R']) {
     const minY = Math.min(...feet.map((x) => x[s + 'y']));
     for (let f = 0; f < n; f++) {
       const g = (f + 1) % n;
-      if (feet[f][s + 'y'] < minY + 4 && feet[g][s + 'y'] < minY + 4) vs.push(-(feet[g][s].z - feet[f][s].z) * FPS);
+      if (feet[f][s + 'y'] < minY + 4 && feet[g][s + 'y'] < minY + 4) vs.push(-(feet[g][s].z - feet[f][s].z) * fps);
     }
   }
   vs.sort((a, b) => a - b);
-  const speed = vs[vs.length >> 1] * k * STRIDE; // median, model m/s
+  const speed = speedBy === 'root' ? ((hips[n - 1].z - hips[0].z) * (n / (n - 1)) / (t1 - t0)) * k : vs[vs.length >> 1] * k * stride; // model m/s
   const mean = hips.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(1 / n);
   const r3 = (v) => Math.round(v * 1000) / 1000;
   const q = [], p = [];
@@ -109,13 +116,20 @@ function convert(file) {
     p.push(r3((hips[f].x - mean.x) * k), r3((hips[f].y - restHipY) * k), 0); // forward root motion dropped: the game moves the body
   }
   console.error(file, { frames: n, mixL, restHipY: restHipY.toFixed(1), modelSpeed: speed.toFixed(3), hipDrop: ((mean.y - restHipY) * k).toFixed(3) });
-  return { n, duration: clip.duration, speed: r3(speed), q, p };
+  return { n, duration: r3(t1 - t0), speed: r3(speed), q, p };
 }
 
-const [walkFile, runFile] = process.argv.slice(2);
-const out = { walk: convert(walkFile), run: convert(runFile) };
+const [walkFile, runFile, swimFile, edgeFile] = process.argv.slice(2);
+const out = {
+  walk: convert(walkFile, { stride: STRIDE, align: true }),
+  run: convert(runFile, { stride: STRIDE, align: true }),
+  // breaststroke, two strokes; the body lies flat so nothing is levelled
+  swim: convert(swimFile, { lean: 0, headUp: 0.72, armsOut: 0, fps: 15, speed: 'root' }),
+  // reaching the bank: the grab, played once as the hiker hauls out of the water
+  edge: convert(edgeFile, { lean: 0, armsOut: 0, fps: 20, from: 1.5, to: 3.1 }),
+};
 process.stdout.write(`// Generated by tools/mocap-convert.mjs from Mixamo clips (walk / run, in place).
-// Per frame: one quaternion per bone (rig.js order) and the hip offset; frame 0 = left heel strike.
+// Per frame: one quaternion per bone (rig.js order) and the hip offset; walk/run frame 0 = left heel strike.
 // speed: ground speed (model m/s) at which the feet stay planted when played in real time.
 export default ${JSON.stringify(out)};
 `);

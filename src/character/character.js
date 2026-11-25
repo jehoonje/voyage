@@ -4,12 +4,15 @@ import * as THREE from 'three';
 import { EYES, HAIR, HATS, TOPS, BOTTOMS, SHOES, ACCESSORIES, DEFAULT_SPEC, HEAD_PIVOT } from './parts.js';
 import { BONES, BONE } from './rig.js';
 import MOCAP from './mocap.js';
+import { SWIM_Y } from '../physics.js';
 
 export const SCALE = 1.35; // model metres → world metres (about 1.7 m with hair)
 export const POSE_KEYS = ['drop', 'back', 'lean', 'twist', 'legL', 'legR', 'kneeL', 'kneeR',
   'armLX', 'armRX', 'armLZ', 'armRZ', 'elbowL', 'elbowR'];
 const QUALITY = 1.6;
-const NECK_TUCK = 0.045; // model metres
+const NECK_TUCK = 0.07; // model metres
+const SWIM_LIFT = 0.5; // model metres: floats the prone swimmer up to the surface
+const EDGE_TIME = 1.1; // seconds to haul out of the water
 const WALK_REF = 2.6, RUN_REF = 5.4; // keep in step with physics WALK / RUN // grid coarsening for game-ready triangle counts
 const DROP_K = 0.42 / 0.93; // (model units) action poses were authored for a 0.93 m hip height
 
@@ -69,19 +72,53 @@ function T(name) {
   return (TEX[name] = mk[name]());
 }
 /** fabric: colour × a tri-planar weave sampled in rest-pose space, so it never swims as limbs move */
-function cloth(color, texName = 'cotton', scale = 22, rough = 0.88) {
-  const m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0 });
+/* 2D look: three flat bands of light (toon) and an ink outline */
+let TOON = null;
+function toon(opts) {
+  if (!TOON) {
+    TOON = new THREE.DataTexture(new Uint8Array([105, 190, 255]), 3, 1, THREE.RedFormat);
+    TOON.minFilter = TOON.magFilter = THREE.NearestFilter; TOON.generateMipmaps = false; TOON.needsUpdate = true;
+  }
+  const m = new THREE.MeshToonMaterial({ gradientMap: TOON, ...opts });
+  m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', FILL(0.1)); };
+  return m;
+}
+/** soft fill so shaded sides keep their colour instead of going muddy */
+// lit side shows the flat base colour (never brighter), shade steps down from there
+const CLAMP = 'outgoingLight = min(outgoingLight, diffuseColor.rgb * 1.03 + totalEmissiveRadiance);';
+const FILL = (k) => `outgoingLight += diffuseColor.rgb * ${k.toFixed(2)};\n${CLAMP}\n#include <opaque_fragment>`;
+const OUTLINE_U = { uPx: { value: 1.5 }, uRes: { value: new THREE.Vector2(1, 1) } };
+let OUTLINE = null;
+function outlineMat() {
+  if (OUTLINE) return OUTLINE;
+  OUTLINE = new THREE.MeshBasicMaterial({ color: 0x2a211c, side: THREE.BackSide });
+  OUTLINE.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, OUTLINE_U);
+    // push back faces out along the skinned normal by a fixed number of screen pixels
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uPx; uniform vec2 uRes;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+{ vec3 vn = normalize(normalMatrix * objectNormal); vec2 d = (projectionMatrix * vec4(vn, 0.)).xy;
+  float l = length(d); if (l > 1e-5) gl_Position.xy += d / l * uPx * 2. / uRes * gl_Position.w; }`);
+  };
+  return OUTLINE;
+}
+const _res = new THREE.Vector2();
+function outlineBeforeRender(r) { r.getDrawingBufferSize(_res); OUTLINE_U.uRes.value.copy(_res); OUTLINE_U.uPx.value = 1.9 * r.getPixelRatio(); }
+
+function cloth(color, texName = 'cotton', scale = 22) {
+  const m = toon({ color });
   const t = T(texName);
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, { uD: { value: t }, uS: { value: scale } });
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vR; varying vec3 vRN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvR = position; vRN = normal;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uD; uniform float uS; varying vec3 vR; varying vec3 vRN;')
       .replace('#include <map_fragment>', `vec3 n0 = normalize(vRN), w = pow(abs(n0), vec3(3.)); w /= w.x + w.y + w.z;
-diffuseColor.rgb *= texture2D(uD, vR.zy * uS).rgb * w.x + texture2D(uD, vR.xz * uS).rgb * w.y + texture2D(uD, vR.xy * uS).rgb * w.z;`);
+diffuseColor.rgb *= texture2D(uD, vR.zy * uS).rgb * w.x + texture2D(uD, vR.xz * uS).rgb * w.y + texture2D(uD, vR.xy * uS).rgb * w.z;`)
+      .replace('#include <opaque_fragment>', FILL(0.14));
   };
   return m;
 }
-const plain = (color, roughness = 0.6) => new THREE.MeshStandardMaterial({ color, roughness });
+const plain = (color) => { const m = toon({ color }); m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', FILL(0.14)); }; return m; };
 function faceDecal(freckles) {
   const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
   sd = 7;
@@ -91,7 +128,7 @@ function faceDecal(freckles) {
 }
 const DECALS = {};
 function skinMat(color, freckles) {
-  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
+  const m = toon({ color });
   const f = DECALS[freckles] || (DECALS[freckles] = faceDecal(freckles));
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uF = { value: f };
@@ -101,7 +138,8 @@ function skinMat(color, freckles) {
   vec4 d = texture2D(uF, uv); diffuseColor.rgb = mix(diffuseColor.rgb, d.rgb, d.a * fr); }`)
       .replace('#include <opaque_fragment>', `float tt = 1. - abs(dot(normal, normalize(vViewPosition)));
 outgoingLight += vec3(.9, .35, .25) * .07 * smoothstep(.2, .8, tt);
-outgoingLight += diffuseColor.rgb * .24; // soft fill so faces stay readable in shade
+outgoingLight += diffuseColor.rgb * .22; // soft fill so faces stay readable in shade
+${CLAMP}
 #include <opaque_fragment>`);
   };
   return m;
@@ -222,9 +260,9 @@ function partsFor(s) {
 /* ================= face (rigid on the head bone) ================= */
 function buildFace(face, s) {
   const E = EYES[s.eyes], skin = s.skin, hairColor = s.hairColor;
-  const r = 0.036, white = new THREE.MeshStandardMaterial({ color: 0xece6dc, roughness: 0.45, emissive: 0xece6dc, emissiveIntensity: 0.2 });
-  const iris = new THREE.MeshStandardMaterial({ color: s.iris, roughness: 0.35, emissive: s.iris, emissiveIntensity: 0.24 }), pupil = new THREE.MeshBasicMaterial({ color: 0x120c08 });
-  const shine = new THREE.MeshBasicMaterial({ color: 0xffffff }), lidMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin).multiplyScalar(0.94), roughness: 0.55, emissive: new THREE.Color(skin).multiplyScalar(0.24) });
+  const r = 0.036, white = toon({ color: 0xece6dc, emissive: 0xece6dc, emissiveIntensity: 0.22 });
+  const iris = toon({ color: s.iris, emissive: s.iris, emissiveIntensity: 0.24 }), pupil = new THREE.MeshBasicMaterial({ color: 0x120c08 });
+  const shine = new THREE.MeshBasicMaterial({ color: 0xffffff }), lidMat = toon({ color: new THREE.Color(skin).multiplyScalar(0.94), emissive: new THREE.Color(skin).multiplyScalar(0.22) });
   const lash = new THREE.MeshBasicMaterial({ color: 0x1c1410 }), browMat = plain(hairColor);
   const [sx, sy] = E.scale || [1, 1], cover = E.cover ?? 0.62, tilt = E.tilt ?? 0;
   const lids = [];
@@ -257,7 +295,7 @@ function buildFace(face, s) {
   const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.0036, 6, 18, Math.PI * 0.72).rotateZ(Math.PI + 0.36), new THREE.MeshBasicMaterial({ color: 0x8a3c30 }));
   mouth.position.set(0.006, 0.928, 0.152); face.add(mouth);
   if (s.acc.goggles) {
-    const lens = new THREE.MeshStandardMaterial({ color: s.acc.goggles.c, roughness: 0.15, metalness: 0.3 });
+    const lens = toon({ color: s.acc.goggles.c });
     for (const sd of [-1, 1]) { const l = new THREE.Mesh(new THREE.SphereGeometry(0.034, 20, 12).scale(1.5, 0.75, 0.6), lens); l.position.set(sd * 0.055, 1.2, 0.186); face.add(l); }
   }
   const H = HAIR[s.hair];
@@ -355,7 +393,8 @@ export function createCharacter(scene) {
   axe.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   axe.visible = false;
 
-  let meshes = [], token = 0, spec = null;
+  let meshes = [], outlines = [], token = 0, spec = null;
+  const NO_OUTLINE = new Set(['zip', 'armband', 'soles', 'topZone', 'straps', 'slingStrap']);
 
   async function apply(s) {
     s = sanitize(s);
@@ -364,6 +403,8 @@ export function createCharacter(scene) {
     const geos = await Promise.all(list.map((p) => geometry(p.kind, p.params)));
     if (my !== token) return false; // a newer choice arrived meanwhile
     for (const m of meshes) { root.remove(m); m.material.dispose(); }
+    for (const o of outlines) root.remove(o);
+    outlines = [];
     meshes = list.map((p, i) => {
       const m = new THREE.SkinnedMesh(geos[i], p.mat());
       m.castShadow = true;
@@ -371,6 +412,11 @@ export function createCharacter(scene) {
       m.frustumCulled = false;
       root.add(m);
       m.bind(skeleton, IDENT);
+      if (!NO_OUTLINE.has(p.kind)) {
+        const o = new THREE.SkinnedMesh(geos[i], outlineMat());
+        o.frustumCulled = false; o.onBeforeRender = outlineBeforeRender;
+        root.add(o); o.bind(skeleton, IDENT); outlines.push(o);
+      }
       return m;
     });
     if (face) { J.head.remove(face); face.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } }); }
@@ -385,9 +431,10 @@ export function createCharacter(scene) {
   const cur = Object.fromEntries(KEYS.map((k) => [k, 0]));
   const tg = { ...cur };
   let phase = 0, breathT = 0, blinkT = 2, moveW = 0, runW = 0, airT = 0;
-  let mocapU = 0, mocapW = 0;
+  let mocapU = 0, mocapW = 0, swimU = 0, swimW = 0, edgeT = -1, edgeDrop = 0;
   const mk = () => Array.from({ length: NB }, () => new THREE.Quaternion());
-  const walkQ = mk(), runQ = mk(), walkP = new THREE.Vector3(), runP = new THREE.Vector3();
+  const walkQ = mk(), runQ = mk(), walkP = new THREE.Vector3(), runP = new THREE.Vector3(), swimQ = mk(), swimP = new THREE.Vector3();
+  const E = MOCAP.edge, edgeEndY = E.p[(E.n - 1) * 3 + 1];
   const sat = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const pos = (v) => (v > 0 ? v : 0);
 
@@ -395,6 +442,10 @@ export function createCharacter(scene) {
     root,
     get spec() { return spec; },
     get ready() { return meshes.length > 0; },
+    /** true while hauling out of the water (input should wait) */
+    get edging() { return edgeT >= 0; },
+    /** play the grab-the-bank clip; drop = how far below the new ground the body started (world m) */
+    edge(drop) { edgeT = 0; edgeDrop = Math.min(1.4, drop) / SCALE; },
     apply,
     /**
      * speed: actual ground speed (world m/s) so slopes and inertia show in the stride.
@@ -519,6 +570,30 @@ export function createCharacter(scene) {
         J.hips.position.x += (rest[0].x + walkP.x - J.hips.position.x) * mocapW;
         J.hips.position.y += (rest[0].y + walkP.y - J.hips.position.y) * mocapW;
         J.hips.position.z += (rest[0].z + walkP.z - J.hips.position.z) * mocapW;
+      }
+      // swimming: breaststroke while moving, treading water (procedural) when still
+      const swT = !target && p.swim ? sat((speed - 0.15) / 0.6) : 0;
+      swimW += (swT - swimW) * Math.min(1, dt * 4);
+      if (p.swim && speed > 0.05) swimU += dt * Math.min(2.4, Math.max(0.7, speed / SCALE / MOCAP.swim.speed)) / MOCAP.swim.duration;
+      if (swimW > 0.001) {
+        sampleClip(MOCAP.swim, swimU, swimQ, swimP);
+        for (let b = 0; b < NB; b++) bones[b].quaternion.slerp(swimQ[b], swimW);
+        J.hips.position.x += (rest[0].x + swimP.x - J.hips.position.x) * swimW;
+        J.hips.position.y += (rest[0].y + swimP.y + SWIM_LIFT - J.hips.position.y) * swimW;
+        J.hips.position.z += (rest[0].z - J.hips.position.z) * swimW;
+      }
+      // hauling out onto the bank: the grab clip, body rising from the water, then settling into a stand
+      if (edgeT >= 0) {
+        edgeT += dt;
+        const u = edgeT / EDGE_TIME;
+        if (u >= 1) edgeT = -1;
+        else {
+          const ew = u < 0.7 ? Math.min(1, u * 8) : (1 - u) / 0.3;
+          sampleClip(E, Math.min(u / 0.85, 1) * 0.999, swimQ, swimP);
+          for (let b = 0; b < NB; b++) bones[b].quaternion.slerp(swimQ[b], ew);
+          const rise = 1 - Math.pow(1 - Math.min(1, u / 0.8), 2);
+          J.hips.position.y += (rest[0].y + (swimP.y - edgeEndY) * 0.6 - edgeDrop * (1 - rise) - J.hips.position.y) * ew;
+        }
       }
       axe.visible = !!(target && target.axe);
       // blink every few seconds

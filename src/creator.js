@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { EYES, HAIR, HATS, TOPS, BOTTOMS, SHOES, ACCESSORIES, SKIN_TONES, HAIR_COLORS, IRIS_COLORS, GEAR_COLORS } from './character/parts.js';
 import { sanitize, saveSpec } from './character/character.js';
-import { WALK, RUN } from './physics.js';
+import { WALK, RUN, SWIM_Y } from './physics.js';
 
 const HAT_C = { ballcap: 0x26282a, camp: 0xa07440, plaidcap: 0xffffff, mesh: 0xc8c0dc, bucket: 0xc8b490, rollbeanie: 0x3a3e46, pombeanie: 0xe8e2d4, bandana: 0x1e1e22, visor: 0xc8d4dc };
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -28,6 +28,8 @@ export function createCreator({ renderer, hero, onDone }) {
   const rim = new THREE.DirectionalLight(0xdde8ff, 0.9); rim.position.set(2, 2, -2.5); scene.add(rim);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(0.9, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xbcc2b4 }));
   floor.receiveShadow = true; scene.add(floor);
+  const water = new THREE.Mesh(new THREE.CircleGeometry(1.3, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x3f8fb0, transparent: true, opacity: 0.6, depthWrite: false }));
+  water.renderOrder = 2; water.visible = false; scene.add(water);
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 30);
   const view = { yaw: 0.35, ty: FRAME.acc[0], dist: FRAME.acc[1], ty0: FRAME.acc[0], dist0: FRAME.acc[1] };
 
@@ -185,13 +187,15 @@ export function createCreator({ renderer, hero, onDone }) {
       // pose: idle / walk / run in place, or a hop
       mt += dt;
       P.y = 0; P.grounded = true; P.land = Math.max(0, P.land - dt * 3);
-      const speed = motion === 'walk' ? WALK : motion === 'run' ? RUN : 0;
+      const swim = motion === 'swim';
+      const speed = motion === 'walk' ? WALK : motion === 'run' ? RUN : swim ? WALK * 0.55 : 0;
+      P.swim = swim; water.visible = swim; floor.visible = !swim;
       if (motion === 'jump') {
         const t = mt % 1.4, air = 0.62;
         if (t < air) { P.y = 4.2 * t * (air - t); P.grounded = false; } else if (t < air + dt * 1.5) P.land = 0.6;
       }
       hero.animate(dt, P, speed, null);
-      hero.root.position.y = P.y;
+      hero.root.position.y = swim ? SWIM_Y : P.y;
       hero.root.rotation.y = 0;
 
       // camera eases to the tab's framing
@@ -202,9 +206,10 @@ export function createCreator({ renderer, hero, onDone }) {
       camera.aspect = w / h;
       // keep the whole framed part visible on narrow screens
       const fit = camera.aspect < 0.75 ? 0.75 / camera.aspect : 1;
-      const d = view.dist * Math.min(fit, 1.6);
-      camera.position.set(Math.sin(view.yaw) * d, view.ty + d * 0.12, Math.cos(view.yaw) * d);
-      camera.lookAt(0, view.ty, 0);
+      const d = view.dist * Math.min(fit, 1.6) * (swim ? 1.35 : 1);
+      const oy = swim ? SWIM_Y + 0.5 : 0; // swimming sits low in the water
+      camera.position.set(Math.sin(view.yaw) * d, view.ty + oy + d * 0.12 + (swim ? 0.5 : 0), Math.cos(view.yaw) * d);
+      camera.lookAt(0, view.ty + oy, 0);
       camera.updateProjectionMatrix();
       renderer.setViewport(r.left, innerHeight - r.bottom, w, h);
       renderer.render(scene, camera);

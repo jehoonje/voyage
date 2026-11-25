@@ -1,4 +1,4 @@
-// Touch joystick (left half), camera drag (right half), keyboard, jump/run buttons.
+// Touch joystick (left half), camera drag (right half; two fingers pinch to zoom), keyboard, jump/run buttons.
 import { clamp } from './noise.js';
 
 export function createInput({ onJump, onMap, onLook, onZoom }) {
@@ -6,6 +6,7 @@ export function createInput({ onJump, onMap, onLook, onZoom }) {
   const joyEl = $('joy'), knob = $('knob'), touch = $('touch'), runBtn = $('runBtn');
   const joy = { id: null, ox: 0, oy: 0, x: 0, y: 0 };
   const look = { id: null, lx: 0, ly: 0 };
+  const pinch = { id: null, x: 0, y: 0, d: 0 }; // second finger on the camera side
   const keys = {};
   let running = false;
 
@@ -26,6 +27,8 @@ export function createInput({ onJump, onMap, onLook, onZoom }) {
       joyEl.classList.add('act');
     } else if (look.id === null) {
       Object.assign(look, { id: e.pointerId, lx: e.clientX, ly: e.clientY });
+    } else if (pinch.id === null) {
+      Object.assign(pinch, { id: e.pointerId, x: e.clientX, y: e.clientY, d: Math.hypot(e.clientX - look.lx, e.clientY - look.ly) });
     }
     touch.setPointerCapture(e.pointerId);
   });
@@ -36,23 +39,35 @@ export function createInput({ onJump, onMap, onLook, onZoom }) {
       if (l > max) { dx *= max / l; dy *= max / l; }
       joy.x = dx / max; joy.y = dy / max;
       knob.style.transform = `translate(${dx}px,${dy}px)`;
-    } else if (e.pointerId === look.id) {
-      onLook(e.clientX - look.lx, e.clientY - look.ly);
-      look.lx = e.clientX; look.ly = e.clientY;
+    } else if (e.pointerId === look.id || e.pointerId === pinch.id) {
+      if (pinch.id !== null) { // two fingers: spread to zoom in, pinch to zoom out
+        if (e.pointerId === look.id) { look.lx = e.clientX; look.ly = e.clientY; } else { pinch.x = e.clientX; pinch.y = e.clientY; }
+        const d = Math.hypot(pinch.x - look.lx, pinch.y - look.ly);
+        onZoom((pinch.d - d) * 4);
+        pinch.d = d;
+      } else {
+        onLook(e.clientX - look.lx, e.clientY - look.ly);
+        look.lx = e.clientX; look.ly = e.clientY;
+      }
     }
   });
   const end = (e) => {
     if (e.pointerId === joy.id) { joy.id = null; joy.x = joy.y = 0; joyEl.classList.remove('act'); joyHome(); }
-    if (e.pointerId === look.id) look.id = null;
+    if (e.pointerId === pinch.id) pinch.id = null;
+    if (e.pointerId === look.id) { // the other finger keeps steering the camera
+      if (pinch.id !== null) { Object.assign(look, { id: pinch.id, lx: pinch.x, ly: pinch.y }); pinch.id = null; } else look.id = null;
+    }
   };
   touch.addEventListener('pointerup', end);
   touch.addEventListener('pointercancel', end);
-  touch.addEventListener('wheel', (e) => onZoom(e.deltaY), { passive: true });
+  touch.addEventListener('wheel', (e) => { e.preventDefault(); onZoom(e.deltaY * (e.deltaMode === 1 ? 30 : 1)); }, { passive: false });
 
   addEventListener('keydown', (e) => {
     keys[e.code] = true;
     if (e.code === 'Space') { onJump(); e.preventDefault(); }
     if (e.code === 'KeyM') onMap();
+    if (e.code === 'Equal' || e.code === 'NumpadAdd') onZoom(-120);
+    if (e.code === 'Minus' || e.code === 'NumpadSubtract') onZoom(120);
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
 
