@@ -1,4 +1,5 @@
-// Touch joystick (left half), camera drag (right half; two fingers pinch to zoom), keyboard, jump/run buttons.
+// Touch joystick (left half), camera drag (right half), pinch to zoom (two fingers on the camera side, or both
+// thumbs landing together anywhere), keyboard, jump/run buttons.
 import { clamp } from './noise.js';
 
 export function createInput({ onJump, onMap, onLook, onZoom }) {
@@ -6,7 +7,9 @@ export function createInput({ onJump, onMap, onLook, onZoom }) {
   const joyEl = $('joy'), knob = $('knob'), touch = $('touch'), runBtn = $('runBtn');
   const joy = { id: null, ox: 0, oy: 0, x: 0, y: 0 };
   const look = { id: null, lx: 0, ly: 0 };
-  const pinch = { id: null, x: 0, y: 0, d: 0 }; // second finger on the camera side
+  const pinch = { id: null, x: 0, y: 0, d: 0 }; // second finger of a pinch
+  const first = { id: null, t: 0, x: 0, y: 0, moved: false }; // the most recent lone touch, to spot two thumbs landing together
+  const TOGETHER = 260; // ms
   const keys = {};
   let running = false;
 
@@ -19,8 +22,21 @@ export function createInput({ onJump, onMap, onLook, onZoom }) {
   joyHome();
   addEventListener('resize', () => { if (joy.id === null) joyHome(); });
 
+  function joyRelease() { joy.id = null; joy.x = joy.y = 0; joyEl.classList.remove('act'); joyHome(); }
   touch.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    const solo = joy.id === null && look.id === null;
+    // both thumbs down at (nearly) the same moment, the first one still: that's a pinch, wherever they are
+    if (!solo && first.id !== null && !first.moved && e.timeStamp - first.t < TOGETHER && pinch.id === null) {
+      if (joy.id === first.id) joyRelease();
+      Object.assign(look, { id: first.id, lx: first.x, ly: first.y });
+      Object.assign(pinch, { id: e.pointerId, x: e.clientX, y: e.clientY, d: Math.hypot(e.clientX - first.x, e.clientY - first.y) });
+      first.id = null;
+      try { touch.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
+      return;
+    }
+    if (solo) Object.assign(first, { id: e.pointerId, t: e.timeStamp, x: e.clientX, y: e.clientY, moved: false });
+    else first.id = null;
     if (e.clientX < innerWidth * 0.45 && joy.id === null) {
       Object.assign(joy, { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: 0, y: 0 });
       joyEl.style.transform = `translate(${joy.ox}px,${joy.oy}px)`;
@@ -30,9 +46,13 @@ export function createInput({ onJump, onMap, onLook, onZoom }) {
     } else if (pinch.id === null) {
       Object.assign(pinch, { id: e.pointerId, x: e.clientX, y: e.clientY, d: Math.hypot(e.clientX - look.lx, e.clientY - look.ly) });
     }
-    touch.setPointerCapture(e.pointerId);
+    try { touch.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
   });
   touch.addEventListener('pointermove', (e) => {
+    if (e.pointerId === first.id) {
+      if (Math.hypot(e.clientX - first.x, e.clientY - first.y) > 14) first.moved = true;
+      if (first.moved) first.id = null; else { first.x = e.clientX; first.y = e.clientY; }
+    }
     if (e.pointerId === joy.id) {
       let dx = e.clientX - joy.ox, dy = e.clientY - joy.oy;
       const l = Math.hypot(dx, dy), max = 56;
@@ -52,7 +72,8 @@ export function createInput({ onJump, onMap, onLook, onZoom }) {
     }
   });
   const end = (e) => {
-    if (e.pointerId === joy.id) { joy.id = null; joy.x = joy.y = 0; joyEl.classList.remove('act'); joyHome(); }
+    if (e.pointerId === first.id) first.id = null;
+    if (e.pointerId === joy.id) joyRelease();
     if (e.pointerId === pinch.id) pinch.id = null;
     if (e.pointerId === look.id) { // the other finger keeps steering the camera
       if (pinch.id !== null) { Object.assign(look, { id: pinch.id, lx: pinch.x, ly: pinch.y }); pinch.id = null; } else look.id = null;
