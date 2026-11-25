@@ -3,13 +3,14 @@
 import * as THREE from 'three';
 import { EYES, HAIR, HATS, TOPS, BOTTOMS, SHOES, ACCESSORIES, DEFAULT_SPEC, HEAD_PIVOT } from './parts.js';
 import { BONES, BONE } from './rig.js';
+import MOCAP from './mocap.js';
 
 export const SCALE = 1.35; // model metres → world metres (about 1.7 m with hair)
 export const POSE_KEYS = ['drop', 'back', 'lean', 'twist', 'legL', 'legR', 'kneeL', 'kneeR',
   'armLX', 'armRX', 'armLZ', 'armRZ', 'elbowL', 'elbowR'];
 const QUALITY = 1.6;
 const NECK_TUCK = 0.045; // model metres
-const WALK_REF = 3.6, RUN_REF = 7; // keep in step with physics WALK / RUN // grid coarsening for game-ready triangle counts
+const WALK_REF = 2.6, RUN_REF = 5.4; // keep in step with physics WALK / RUN // grid coarsening for game-ready triangle counts
 const DROP_K = 0.42 / 0.93; // (model units) action poses were authored for a 0.93 m hip height
 
 /* ================= spec: what the player chose ================= */
@@ -306,6 +307,23 @@ const RUN_ARM = {
   y: track([[0, -0.05], [0.25, 0.12], [0.55, 0.38], [0.8, 0.15]]),
 };
 
+/* ================= mocap walk / run (Mixamo, retargeted by tools/mocap-convert.mjs) ================= */
+const NB = BONES.length;
+/** cartoon pacing: how much faster than real time a clip may play before the feet start to slide */
+const MAX_RATE = { walk: 1.8, run: 1.7 };
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+/** pose at phase u (0..1) into out quats / out hip offset, wrapping smoothly */
+function sampleClip(c, u, outQ, outP) {
+  const x = (u - Math.floor(u)) * c.n, i = Math.floor(x) % c.n, j = (i + 1) % c.n, t = x - Math.floor(x);
+  for (let b = 0; b < NB; b++) {
+    const a = (i * NB + b) * 4, d = (j * NB + b) * 4;
+    _qa.set(c.q[a], c.q[a + 1], c.q[a + 2], c.q[a + 3]);
+    _qb.set(c.q[d], c.q[d + 1], c.q[d + 2], c.q[d + 3]);
+    outQ[b].slerpQuaternions(_qa, _qb, t).normalize();
+  }
+  outP.set(c.p[i * 3] + (c.p[j * 3] - c.p[i * 3]) * t, c.p[i * 3 + 1] + (c.p[j * 3 + 1] - c.p[i * 3 + 1]) * t, c.p[i * 3 + 2] + (c.p[j * 3 + 2] - c.p[i * 3 + 2]) * t);
+}
+
 /* ================= the character ================= */
 export function createCharacter(scene) {
   const root = new THREE.Group();
@@ -367,6 +385,9 @@ export function createCharacter(scene) {
   const cur = Object.fromEntries(KEYS.map((k) => [k, 0]));
   const tg = { ...cur };
   let phase = 0, breathT = 0, blinkT = 2, moveW = 0, runW = 0, airT = 0;
+  let mocapU = 0, mocapW = 0;
+  const mk = () => Array.from({ length: NB }, () => new THREE.Quaternion());
+  const walkQ = mk(), runQ = mk(), walkP = new THREE.Vector3(), runP = new THREE.Vector3();
   const sat = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const pos = (v) => (v > 0 ? v : 0);
 
@@ -466,6 +487,7 @@ export function createCharacter(scene) {
 
       root.position.set(p.x, p.y, p.z);
       root.rotation.y = p.face;
+      for (const b of bones) b.quaternion.identity(); // start clean: the mocap blend below writes full rotations
       J.hips.position.set(rest[0].x + cur.shiftX, rest[0].y + cur.drop * DROP_K, rest[0].z + cur.back * DROP_K);
       J.hips.rotation.set(0, cur.hipYaw, cur.sway);
       // shoulders counter-rotate against the pelvis; spine leans
@@ -477,6 +499,27 @@ export function createCharacter(scene) {
       J.footL.rotation.x = -(cur.legL + cur.kneeL) * 0.85 + cur.toeL; J.footR.rotation.x = -(cur.legR + cur.kneeR) * 0.85 + cur.toeR;
       J.upperArmL.rotation.set(cur.armLX, cur.armLY, cur.armLZ); J.upperArmR.rotation.set(cur.armRX, cur.armRY, cur.armRZ);
       J.foreArmL.rotation.x = cur.elbowL; J.foreArmR.rotation.x = cur.elbowR;
+      // locomotion from mocap: blended over the procedural pose (which still drives idle, jumps, swimming, actions)
+      const mwT = target || p.swim ? 0 : sat(speed / 0.9) * (airT > 0 ? 0 : 1) * (1 - (p.land || 0));
+      mocapW += (mwT - mocapW) * Math.min(1, dt * (mwT > mocapW ? 8 : 12));
+      if (speed > 0.02) {
+        // playback rate keeps the planted foot under the body up to a cartoon cadence cap
+        const W = MOCAP.walk, R = MOCAP.run, v = speed / SCALE;
+        const rw = Math.min(MAX_RATE.walk, Math.max(0.5, v / W.speed)), rr = Math.min(MAX_RATE.run, Math.max(0.6, v / R.speed));
+        mocapU += dt * ((1 - runW) * rw / W.duration + runW * rr / R.duration);
+      }
+      if (mocapW > 0.001) {
+        sampleClip(MOCAP.walk, mocapU, walkQ, walkP);
+        sampleClip(MOCAP.run, mocapU, runQ, runP);
+        for (let b = 0; b < NB; b++) {
+          walkQ[b].slerp(runQ[b], runW);
+          bones[b].quaternion.slerp(walkQ[b], mocapW);
+        }
+        walkP.lerp(runP, runW);
+        J.hips.position.x += (rest[0].x + walkP.x - J.hips.position.x) * mocapW;
+        J.hips.position.y += (rest[0].y + walkP.y - J.hips.position.y) * mocapW;
+        J.hips.position.z += (rest[0].z + walkP.z - J.hips.position.z) * mocapW;
+      }
       axe.visible = !!(target && target.axe);
       // blink every few seconds
       blinkT -= dt;

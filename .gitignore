@@ -2,3 +2,7 @@ node_modules
 dist
 .DS_Store
 .vercel
+
+# Mixamo source clips stay local (license: no redistribution of raw files)
+tools/mocap/
+*.fbx
