@@ -4,9 +4,17 @@ import { hash2 } from './noise.js';
 import { sample, biome, groundColor, splat } from './world.js';
 import { createTerrainMaterial } from './terrainMaterial.js';
 import { TYPES, TINT, pickVegetation } from './vegetation.js';
+import { CHOPPABLE, felled, poseTree } from './forestry.js';
 
 export const CHUNK = 48;
 const SEG = 16, RADIUS = 3, STEP = CHUNK / SEG, VEG_GRID = 4;
+/** [centre height, radius] spheres approximating each tree type, before instance scale */
+const OCCLUDERS = {
+  pine: [[1.2, 0.45], [3.6, 1.7], [5.2, 1.2]],
+  broad: [[1.2, 0.5], [3.8, 2.0]],
+  jungle: [[2, 0.6], [4.5, 0.6], [7.4, 3.0]],
+  palm: [[2.5, 0.4], [5.3, 2.4]],
+};
 
 export class ChunkManager {
   constructor(scene) {
@@ -65,14 +73,14 @@ export class ChunkManager {
     const ground = new THREE.Mesh(geo, this.mat);
     ground.receiveShadow = true;
     group.add(ground);
-    const meshes = this._vegetation(cx, cz, group);
+    const { meshes, trees } = this._vegetation(cx, cz, group);
 
     this.scene.add(group);
     const sphere = new THREE.Sphere(
       new THREE.Vector3(x0 + CHUNK / 2, (hmin + hmax) / 2 + 4, z0 + CHUNK / 2),
       CHUNK * 0.75 + (hmax - hmin) / 2 + 8,
     );
-    this.chunks.set(cx + ',' + cz, { group, geo, sphere, meshes });
+    this.chunks.set(cx + ',' + cz, { group, geo, sphere, meshes, trees });
   }
 
   _vegetation(cx, cz, group) {
@@ -84,18 +92,23 @@ export class ChunkManager {
       const x = (wi + hash2(wi, wj * 5 + 9)) * VEG_GRID, z = (wj + hash2(wi * 11 + 3, wj)) * VEG_GRID;
       const s = sample(x, z), t = pickVegetation(biome(s), r, s.h);
       if (!t) continue;
-      (lists[t] || (lists[t] = [])).push(x, s.h - 0.15, z, hash2(wi + 77, wj - 31));
+      (lists[t] || (lists[t] = [])).push(x, s.h - 0.15, z, hash2(wi + 77, wj - 31), wi, wj);
     }
-    const meshes = [], dummy = this._dummy, col = this._col;
+    const meshes = [], trees = new Map(), dummy = this._dummy, col = this._col;
     for (const t in lists) {
-      const L = lists[t], cnt = L.length / 4;
+      const L = lists[t], cnt = L.length / 6, typeMeshes = [];
       for (const [g, mat, tint] of TYPES[t]) {
-        const im = new THREE.InstancedMesh(g, mat, cnt);
+        // per-chunk geometry wrapper: shares the vertex buffers, adds a per-instance fade
+        const geo = new THREE.BufferGeometry();
+        geo.setIndex(g.index);
+        for (const name in g.attributes) geo.setAttribute(name, g.attributes[name]);
+        geo.setAttribute('aFade', new THREE.InstancedBufferAttribute(new Float32Array(cnt).fill(1), 1));
+        const im = new THREE.InstancedMesh(geo, mat, cnt);
         im.frustumCulled = false; // culled per chunk instead
         im.castShadow = true;
         for (let q = 0; q < cnt; q++) {
-          const rr = L[q * 4 + 3], sc = t === 'rock' ? 0.6 + rr * 1.6 : 0.75 + rr * 0.6;
-          dummy.position.set(L[q * 4], L[q * 4 + 1], L[q * 4 + 2]);
+          const rr = L[q * 6 + 3], sc = t === 'rock' ? 0.6 + rr * 1.6 : 0.75 + rr * 0.6;
+          dummy.position.set(L[q * 6], L[q * 6 + 1], L[q * 6 + 2]);
           dummy.rotation.set(0, rr * 6.283, 0);
           if (t === 'rock') dummy.scale.set(sc * (1 + rr), sc * 0.65, sc);
           else dummy.scale.setScalar(sc);
@@ -109,16 +122,25 @@ export class ChunkManager {
         }
         group.add(im);
         meshes.push(im);
+        typeMeshes.push(im);
+      }
+      if (CHOPPABLE.has(t)) {
+        for (let q = 0; q < cnt; q++) {
+          const rr = L[q * 6 + 3], key = L[q * 6 + 4] + ',' + L[q * 6 + 5];
+          const tree = { key, type: t, x: L[q * 6], y: L[q * 6 + 1], z: L[q * 6 + 2], rr, sc: 0.75 + rr * 0.6, meshes: typeMeshes, idx: q, hidden: false, busy: false };
+          if (felled.has(key)) { tree.hidden = true; poseTree(tree, 0, 0, 1, 0); }
+          trees.set(key, tree);
+        }
       }
     }
-    return meshes;
+    return { meshes, trees };
   }
 
   drop(key) {
     const c = this.chunks.get(key);
     this.scene.remove(c.group);
     c.geo.dispose();
-    for (const m of c.meshes) m.dispose();
+    for (const m of c.meshes) { m.geometry.dispose(); m.dispose(); }
     this.chunks.delete(key);
   }
 
@@ -145,6 +167,55 @@ export class ChunkManager {
       const q = this.queue.shift();
       if (!this.chunks.has(q[0] + ',' + q[1])) this.build(q[0], q[1]);
     }
+  }
+
+  /** tree record by key "wi,wj", if its chunk is loaded */
+  treeAt(key) {
+    const [wi, wj] = key.split(',').map(Number), gn = CHUNK / VEG_GRID;
+    const c = this.chunks.get(Math.floor(wi / gn) + ',' + Math.floor(wj / gn));
+    return c ? c.trees.get(key) : null;
+  }
+
+  /** closest standing tree within maxD of (px,pz) */
+  nearestTree(px, pz, maxD) {
+    const ccx = Math.floor(px / CHUNK), ccz = Math.floor(pz / CHUNK);
+    let best = null, bd = maxD * maxD;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const c = this.chunks.get(ccx + i + ',' + (ccz + j));
+      if (!c) continue;
+      for (const t of c.trees.values()) {
+        if (t.hidden || t.busy) continue;
+        const d = (t.x - px) ** 2 + (t.z - pz) ** 2;
+        if (d < bd) { bd = d; best = t; }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Trees whose crown or trunk (rough spheres per type) the segment a→b passes through.
+   * Used to dissolve trees standing between the camera and the hero.
+   */
+  treesOnSegment(ax, ay, az, bx, by, bz, out) {
+    const dx = bx - ax, dy = by - ay, dz = bz - az, len2 = dx * dx + dy * dy + dz * dz;
+    const ccx = Math.floor(ax / CHUNK), ccz = Math.floor(az / CHUNK);
+    out.clear();
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const c = this.chunks.get(ccx + i + ',' + (ccz + j));
+      if (!c) continue;
+      for (const t of c.trees.values()) {
+        if (t.hidden) continue;
+        if (Math.abs(t.x - ax) > 16 || Math.abs(t.z - az) > 16) continue;
+        for (const [cy, r] of OCCLUDERS[t.type]) {
+          const ox = t.x - ax, oy = t.y + cy * t.sc - ay, oz = t.z - az, rr = r * t.sc + 0.3;
+          const proj = Math.min(1, Math.max(0, (ox * dx + oy * dy + oz * dz) / len2));
+          if (proj <= 0.02) continue;
+          const px = ox - dx * proj, py = oy - dy * proj, pz = oz - dz * proj;
+          if (px * px + py * py + pz * pz < rr * rr) { out.add(t); break; }
+        }
+      }
+    }
+    return out;
   }
 
   /** hide chunks outside the view, but keep nearby ones so they still cast shadows into it */

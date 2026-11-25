@@ -19,7 +19,7 @@
   <div id="stats" class="hud">
     <div class="row"><span id="lvl">탐험가 Lv.1</span><span id="area">0.00 km²</span></div>
     <div class="bar"><i id="xpbar"></i></div>
-    <div id="xptxt">0 / 100 XP</div>
+    <div class="row sub"><span id="xptxt">0 / 100 XP</span><span id="wood">나무 0</span></div>
   </div>
   <div id="place" class="hud"><b id="placeName">—</b><small id="placeBiome"></small></div>
   <button id="mapBtn" class="hud" aria-label="지도 열기">
@@ -29,6 +29,11 @@
   <div id="joy" class="hud"><div id="knob"></div></div>
   <button id="runBtn" class="hud act-btn" aria-pressed="false">달리기</button>
   <button id="jumpBtn" class="hud act-btn">점프</button>
+  <button id="campBtn" class="hud act-btn" aria-expanded="false" aria-controls="campMenu">캠핑</button>
+  <div id="campMenu" class="hud" hidden>
+    <button id="pitchBtn"><b>야영</b><small>모닥불 피우기</small></button>
+  </div>
+  <button id="ctxBtn" class="hud" hidden></button>
 
   <div id="map" hidden>
     <canvas id="mapCv"></canvas>
@@ -52,7 +57,7 @@
       <ul>
         <li>화면 왼쪽 드래그 · 이동</li>
         <li>화면 오른쪽 드래그 · 시점 회전</li>
-        <li>키보드: WASD · Shift 달리기 · Space 점프 · M 지도</li>
+        <li>키보드: WASD · Shift 달리기 · Space 점프 · E 상호작용 · C 야영 · M 지도</li>
       </ul>
       <button class="go" id="goNew">탐험 시작</button>
       <button class="go" id="goCont" hidden>이어서 탐험</button>

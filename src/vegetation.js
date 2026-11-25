@@ -1,6 +1,7 @@
 // Low-poly vegetation library: shared geometries, materials and per-biome spawn rules.
 import * as THREE from 'three';
 import { windTime } from './wind.js';
+import { addFade } from './forestry.js';
 
 function facet(g) { g = g.toNonIndexed(); g.computeVertexNormals(); return g; }
 
@@ -37,6 +38,8 @@ M.tint.onBeforeCompile = (sh) => {
   transformed.z += cos(uTime * 1.1 + ip.x * .13 - ip.z * .09) * .04 * sway;
 #endif`);
 };
+
+for (const m of Object.values(M)) addFade(m);
 
 /** base foliage colours, varied per instance */
 export const TINT = {

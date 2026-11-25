@@ -20,7 +20,9 @@ html,body{height:100%;margin:0;overflow:hidden;background:#9fcbe6;color:var(--in
 #area{font-size:12px;color:var(--ink-dim);font-variant-numeric:tabular-nums}
 .bar{height:7px;border-radius:4px;background:rgba(255,255,255,.12);margin-top:7px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--amber-deep),var(--amber));transition:width .25s}
-#xptxt{font-size:11px;color:var(--ink-dim);margin-top:4px;font-variant-numeric:tabular-nums}
+#xptxt,#wood{font-size:11px;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+#stats .sub{margin-top:4px}
+#wood{color:#d9b98a}
 #mapBtn{top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));
   width:56px;height:56px;border-radius:14px;border:1px solid var(--panel-line);background:var(--panel);color:var(--ink);
   display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
@@ -73,3 +75,18 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
   color:#2a1a06;font-family:var(--display);font-size:18px;cursor:pointer}
 .go + .go{margin-top:10px;background:transparent;border:1px solid var(--panel-line);color:var(--ink)}
 @media (prefers-reduced-motion:reduce){#toast,.bar i{transition:none}}
+
+#campBtn{right:calc(28px + env(safe-area-inset-right,0px));bottom:calc(114px + env(safe-area-inset-bottom,0px));width:58px;height:58px;font-size:13px}
+#campBtn[aria-expanded="true"]{background:rgba(240,178,74,.45);border-color:var(--amber)}
+#campMenu{right:calc(96px + env(safe-area-inset-right,0px));bottom:calc(112px + env(safe-area-inset-bottom,0px));
+  background:var(--panel);border:1px solid var(--panel-line);border-radius:14px;padding:6px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#pitchBtn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 16px;border:0;border-radius:10px;
+  background:rgba(240,178,74,.18);color:var(--ink);font-family:var(--ui);cursor:pointer;min-width:132px}
+#pitchBtn b{font-family:var(--display);font-size:16px}
+#pitchBtn small{font-size:11px;color:var(--ink-dim)}
+#pitchBtn:active{background:rgba(240,178,74,.4)}
+#ctxBtn{left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom,0px));height:52px;padding:0 28px;border-radius:26px;
+  border:1px solid rgba(255,220,160,.6);background:linear-gradient(180deg,rgba(240,178,74,.92),rgba(185,118,31,.92));
+  color:#2a1a06;font-family:var(--display);font-size:17px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);white-space:nowrap}
+#ctxBtn:active{filter:brightness(1.1)}
+body.busy #joy,body.busy #runBtn,body.busy #jumpBtn,body.busy #campBtn{opacity:.22;pointer-events:none}

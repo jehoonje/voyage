@@ -19,7 +19,7 @@ function regionName(rx, rz, b) {
 
 export function createProgress() {
   const $ = (id) => document.getElementById(id);
-  const st = { xp: 0, lvl: 1, cells: new Set(), regions: new Set(), biomes: new Set() };
+  const st = { xp: 0, lvl: 1, wood: 0, cells: new Set(), regions: new Set(), biomes: new Set() };
   let dirty = false, lastCell = '', lastPlace = '';
 
   // toasts
@@ -42,6 +42,7 @@ export function createProgress() {
     $('xpbar').style.width = (st.xp / nd) * 100 + '%';
     $('xptxt').textContent = st.xp + ' / ' + nd + ' XP';
     $('area').textContent = areaKm2().toFixed(2) + ' km²';
+    $('wood').textContent = '나무 ' + st.wood;
   }
   const areaKm2 = () => (st.cells.size * CELL * CELL) / 1e6;
 
@@ -61,18 +62,21 @@ export function createProgress() {
   return {
     state: st,
     areaKm2,
+    toast,
+    gain,
+    addWood(n) { st.wood += n; dirty = true; hud(); },
     hasSave() { const s = readSave(); return !!(s && s.cells && s.cells.length); },
     /** restore saved progress; returns saved position or null */
     load() {
       const s = readSave();
       if (!s) return null;
-      st.xp = s.xp; st.lvl = s.lvl;
+      st.xp = s.xp; st.lvl = s.lvl; st.wood = s.wood || 0;
       st.cells = new Set(s.cells); st.regions = new Set(s.regions); st.biomes = new Set(s.biomes);
       hud();
       return { x: s.x, z: s.z };
     },
     reset() {
-      st.xp = 0; st.lvl = 1; st.cells.clear(); st.regions.clear(); st.biomes.clear();
+      st.xp = 0; st.lvl = 1; st.wood = 0; st.cells.clear(); st.regions.clear(); st.biomes.clear();
       dirty = true; hud();
     },
     save(px, pz) {
@@ -80,7 +84,7 @@ export function createProgress() {
       dirty = false;
       try {
         localStorage.setItem(SAVE_KEY, JSON.stringify({
-          xp: st.xp, lvl: st.lvl, cells: [...st.cells], regions: [...st.regions], biomes: [...st.biomes], x: px, z: pz,
+          xp: st.xp, lvl: st.lvl, wood: st.wood, cells: [...st.cells], regions: [...st.regions], biomes: [...st.biomes], x: px, z: pz,
         }));
       } catch { /* storage unavailable */ }
     },

@@ -10,6 +10,10 @@ import { createProgress } from './progress.js';
 import { createMap } from './map.js';
 import { createGrass } from './grass.js';
 import { windTime } from './wind.js';
+import { createFx } from './fx.js';
+import { createCampfires } from './campfire.js';
+import { createForestry } from './forestry.js';
+import { createActions } from './actions.js';
 
 // Keep the authored (non-linear) colours looking as designed.
 THREE.ColorManagement.enabled = false;
@@ -35,14 +39,18 @@ const world = new ChunkManager(scene);
 const hero = createHero(scene);
 const progress = createProgress();
 const grass = createGrass(scene);
+const fx = createFx(scene);
+const fires = createCampfires(scene, fx);
+const forestry = createForestry(world);
 
 const SWIM_DEPTH = -1.15, SWIM_Y = -1.1;
 const P = { x: 0, y: 0, z: 0, vy: 0, face: 0, grounded: true, swim: false };
-const cam = { yaw: 0.6, pitch: 0.38, dist: 9 };
+const cam = { yaw: 0.6, pitch: 0.38, dist: 9, cur: 9 };
 
 const map = createMap(progress, () => P);
+const actions = createActions({ P, fires, fx, progress });
 const input = createInput({
-  onJump() { if (P.grounded && !P.swim) { P.vy = 9.5; P.grounded = false; } },
+  onJump() { if (!actions.busy && P.grounded && !P.swim) { P.vy = 9.5; P.grounded = false; } },
   onMap: () => map.toggle(),
   onLook(dx, dy) { cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch + dy * 0.004, 0.05, 1.25); },
   onZoom(d) { cam.dist = clamp(cam.dist + d * 0.01, 4, 18); },
@@ -58,6 +66,35 @@ function findSpawn() {
 
 let started = false, last = performance.now();
 
+/* context button (chop / douse) and camp menu */
+const ctxBtn = document.getElementById('ctxBtn'), campBtn = document.getElementById('campBtn'), campMenu = document.getElementById('campMenu');
+let ctxMode = '', nearTree = null, ctxTimer = 0;
+function refreshContext() {
+  let mode = '', label = '';
+  if (actions.sitting) { mode = 'douse'; label = '불 끄고 일어나기'; }
+  else if (!actions.busy && !P.swim) {
+    nearTree = world.nearestTree(P.x, P.z, 2.8);
+    if (nearTree) { mode = 'chop'; label = '나무 캐기'; }
+  }
+  if (mode !== ctxMode) { ctxMode = mode; ctxBtn.hidden = !mode; ctxBtn.textContent = label; }
+  document.body.classList.toggle('busy', actions.busy);
+  if (actions.busy) setMenu(false);
+}
+function doContext() {
+  if (ctxMode === 'douse') actions.endCamp();
+  else if (ctxMode === 'chop' && nearTree) actions.startChop(nearTree);
+  refreshContext();
+}
+function setMenu(open) { campMenu.hidden = !open; campBtn.setAttribute('aria-expanded', open); }
+ctxBtn.addEventListener('click', doContext);
+campBtn.addEventListener('click', () => setMenu(campMenu.hidden));
+document.getElementById('pitchBtn').addEventListener('click', () => { setMenu(false); actions.startCamp(); refreshContext(); });
+addEventListener('keydown', (e) => {
+  if (!started) return;
+  if (e.code === 'KeyE') doContext();
+  if (e.code === 'KeyC' && !actions.busy) { actions.startCamp(); refreshContext(); }
+});
+
 function step(now) {
   requestAnimationFrame(step);
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -66,13 +103,14 @@ function step(now) {
 
   // movement relative to camera
   const inp = input.read();
-  let mag = inp.mag;
-  const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw), rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw);
-  let mx = fx * -inp.y + rx * inp.x, mz = fz * -inp.y + rz * inp.x;
+  const actPose = actions.update(dt, now);
+  let mag = actions.busy ? 0 : inp.mag;
+  const fwdX = -Math.sin(cam.yaw), fwdZ = -Math.cos(cam.yaw), rgtX = Math.cos(cam.yaw), rgtZ = -Math.sin(cam.yaw);
+  let mx = fwdX * -inp.y + rgtX * inp.x, mz = fwdZ * -inp.y + rgtZ * inp.x;
   const ml = Math.hypot(mx, mz);
   P.swim = sample(P.x, P.z).h < SWIM_DEPTH;
   const speed = (inp.run ? 15 : 7.5) * (P.swim ? 0.55 : 1);
-  if (ml > 0.01 && mag > 0.08) {
+  if (!actions.busy && ml > 0.01 && mag > 0.08) {
     mx /= ml; mz /= ml;
     P.x += mx * speed * mag * dt;
     P.z += mz * speed * mag * dt;
@@ -89,12 +127,16 @@ function step(now) {
   else if (P.y - floor > 0.25 && !P.swim) P.grounded = false;
   if (P.swim) { P.y = mix(P.y, SWIM_Y, Math.min(1, dt * 6)); P.vy = 0; P.grounded = true; }
 
-  hero.animate(dt, P, mag, inp.run);
+  hero.animate(dt, P, mag, inp.run, actPose);
 
   // third-person camera, kept above terrain
-  const cd = cam.dist * Math.cos(cam.pitch);
-  const cx = P.x + Math.sin(cam.yaw) * cd, cz = P.z + Math.cos(cam.yaw) * cd;
-  const cy = Math.max(P.y + 1.6 + cam.dist * Math.sin(cam.pitch), Math.max(sample(cx, cz).h, 0) + 1.2);
+  // trees between hero and camera dissolve (see forestry.occlude)
+  const headY = P.y + 1.6;
+  const ox = Math.sin(cam.yaw) * Math.cos(cam.pitch), oy = Math.sin(cam.pitch), oz = Math.cos(cam.yaw) * Math.cos(cam.pitch);
+  forestry.occlude(dt, P.x, headY, P.z, P.x + ox * (cam.dist + 1), headY + oy * (cam.dist + 1), P.z + oz * (cam.dist + 1));
+  cam.cur = cam.dist;
+  const cx = P.x + ox * cam.cur, cz = P.z + oz * cam.cur;
+  const cy = Math.max(headY + oy * cam.cur, Math.max(sample(cx, cz).h, 0) + 1.2);
   camera.position.set(cx, cy, cz);
   camera.lookAt(P.x, P.y + 1.6, P.z);
   camera.updateMatrixWorld();
@@ -105,6 +147,10 @@ function step(now) {
   windTime.value = now / 1000;
   grass.update(P.x, P.z);
   env.update(dt, now, P.x, P.z, P.y);
+  fires.update(dt, now);
+  fx.update(dt);
+  forestry.update(now);
+  if ((ctxTimer -= dt) <= 0) { ctxTimer = 0.15; refreshContext(); }
   progress.explore(P.x, P.z);
   if (map.open && mag > 0) map.request();
   renderer.render(scene, camera);
