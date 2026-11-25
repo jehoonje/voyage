@@ -72,8 +72,19 @@ const input = createInput({
   onZoom(d) { cam.dist = clamp(cam.dist * Math.exp(d * 0.0015), DIST_MIN, DIST_MAX); },
 });
 
+/** a random walkable start somewhere in the first few kilometres: forest, meadow, jungle or desert, not too steep */
+const SPAWN_BIOMES = new Set(['forest', 'meadow', 'jungle', 'desert']);
 function findSpawn() {
-  for (let r = 0; r < 4000; r += 20) for (let a = 0; a < 6.28; a += 0.4) {
+  const R = 8000;
+  for (let i = 0; i < 600; i++) {
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r, s = sample(x, z);
+    if (!SPAWN_BIOMES.has(biome(s)) || s.h < 3 || s.h > 34) continue;
+    const e = 2, gx = sample(x + e, z).h - sample(x - e, z).h, gz = sample(x, z + e).h - sample(x, z - e).h;
+    if (Math.hypot(gx, gz) / (2 * e) > 0.45) continue; // no cliffsides
+    return [x, z];
+  }
+  for (let r = 0; r < 4000; r += 20) for (let a = 0; a < 6.28; a += 0.4) { // fallback: nearest pleasant ground
     const x = Math.cos(a) * r, z = Math.sin(a) * r, s = sample(x, z), b = biome(s);
     if ((b === 'forest' || b === 'meadow') && s.h > 3 && s.h < 20) return [x, z];
   }
