@@ -12,7 +12,7 @@ export const CAMP_COST = 6;
 
 export function createActions({ P, fires, fx, progress, onPickup }) {
   let kind = null, phase = '', t = 0, fire = null, tree = null, swings = 0, hit = false, wobT = 9;
-  let dir = [0, 1];
+  let dir = [0, 1], th = 0, om = 0, bounced = false, settled = 0;
   const pose = { ...STAND, axe: false };
   const set = (base, over) => Object.assign(pose, base, { axe: false }, over);
 
@@ -89,19 +89,28 @@ export function createActions({ P, fires, fx, progress, onPickup }) {
       poseTree(tree, 0.07 * Math.exp(-wobT * 5) * Math.sin(wobT * 28), dir[0], dir[1]);
       if (tt >= SWING) {
         swings++; hit = false;
-        if (swings >= SWINGS) { phase = 'fall'; t = 0; }
+        if (swings >= SWINGS) { phase = 'fall'; t = 0; th = 0.08; om = 0.2; bounced = false; settled = 0; }
       }
     } else if (phase === 'fall') {
       set(STAND, { armRX: -0.45, armLX: -0.3, axe: true });
-      const k = Math.min(1, t / 1.3);
-      poseTree(tree, k * k * 1.45, dir[0], dir[1]);
-      if (t > 1.3 && !hit) {
+      // rod pivoting on its base: θ'' = 3g/(2L)·sin θ
+      const L = 7 * tree.sc;
+      if (!settled) {
+        om += ((3 * 9.8) / (2 * L)) * Math.sin(th) * dt;
+        th += om * dt;
+        if (th >= 1.45) {
+          th = 1.45;
+          if (!bounced && om > 0.6) { om = -om * 0.22; bounced = true; } else { om = 0; settled = t; }
+        }
+      }
+      poseTree(tree, th, dir[0], dir[1]);
+      if (th >= 1.45 && !hit) {
         hit = true;
         const reach = 3.5 * tree.sc;
         fx.chips(tree.x + dir[0] * reach, tree.y + 0.3, tree.z + dir[1] * reach, 8, tree.y);
         fx.smoke(tree.x + dir[0] * reach, tree.y + 0.1, tree.z + dir[1] * reach, 4);
       }
-      if (t > 1.6) {
+      if (settled && t > settled + 0.4) {
         poseTree(tree, 0, 0, 1, 0);
         tree.hidden = true; tree.busy = false;
         felled.set(tree.key, now + RESPAWN_MS);

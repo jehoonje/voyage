@@ -8,6 +8,8 @@ import { CHOPPABLE, felled, poseTree } from './forestry.js';
 
 export const CHUNK = 48;
 const SEG = 16, RADIUS = 3, STEP = CHUNK / SEG, VEG_GRID = 4;
+/** trunk radius per type, before instance scale */
+const TRUNK_R = { pine: 0.3, broad: 0.36, jungle: 0.5, palm: 0.26, cactus: 0.42 };
 /** [centre height, radius] spheres approximating each tree type, before instance scale */
 const OCCLUDERS = {
   pine: [[1.2, 0.45], [3.6, 1.7], [5.2, 1.2]],
@@ -73,14 +75,14 @@ export class ChunkManager {
     const ground = new THREE.Mesh(geo, this.mat);
     ground.receiveShadow = true;
     group.add(ground);
-    const { meshes, trees } = this._vegetation(cx, cz, group);
+    const { meshes, trees, solids } = this._vegetation(cx, cz, group);
 
     this.scene.add(group);
     const sphere = new THREE.Sphere(
       new THREE.Vector3(x0 + CHUNK / 2, (hmin + hmax) / 2 + 4, z0 + CHUNK / 2),
       CHUNK * 0.75 + (hmax - hmin) / 2 + 8,
     );
-    this.chunks.set(cx + ',' + cz, { group, geo, sphere, meshes, trees });
+    this.chunks.set(cx + ',' + cz, { group, geo, sphere, meshes, trees, solids });
   }
 
   _vegetation(cx, cz, group) {
@@ -94,7 +96,7 @@ export class ChunkManager {
       if (!t) continue;
       (lists[t] || (lists[t] = [])).push(x, s.h - 0.15, z, hash2(wi + 77, wj - 31), wi, wj);
     }
-    const meshes = [], trees = new Map(), dummy = this._dummy, col = this._col;
+    const meshes = [], trees = new Map(), solids = [], dummy = this._dummy, col = this._col;
     for (const t in lists) {
       const L = lists[t], cnt = L.length / 6, typeMeshes = [];
       for (const [g, mat, tint] of TYPES[t]) {
@@ -130,10 +132,20 @@ export class ChunkManager {
           const tree = { key, type: t, x: L[q * 6], y: L[q * 6 + 1], z: L[q * 6 + 2], rr, sc: 0.75 + rr * 0.6, meshes: typeMeshes, idx: q, hidden: false, busy: false };
           if (felled.has(key)) { tree.hidden = true; poseTree(tree, 0, 0, 1, 0); }
           trees.set(key, tree);
+          solids.push({ x: tree.x, z: tree.z, r: TRUNK_R[t] * tree.sc, top: Infinity, tree });
+        }
+      } else if (t === 'cactus' || t === 'rock') {
+        for (let q = 0; q < cnt; q++) {
+          const rr = L[q * 6 + 3], x = L[q * 6], y = L[q * 6 + 1], z = L[q * 6 + 2];
+          if (t === 'cactus') solids.push({ x, z, r: TRUNK_R.cactus * (0.75 + rr * 0.6), top: Infinity });
+          else {
+            const sc = 0.6 + rr * 1.6;
+            if (sc > 0.9) solids.push({ x, z, r: sc * (1 + rr * 0.5) * 0.8, top: y + sc * 0.6 });
+          }
         }
       }
     }
-    return { meshes, trees };
+    return { meshes, trees, solids };
   }
 
   drop(key) {
@@ -167,6 +179,21 @@ export class ChunkManager {
       const q = this.queue.shift();
       if (!this.chunks.has(q[0] + ',' + q[1])) this.build(q[0], q[1]);
     }
+  }
+
+  /** solid colliders within ~4 m of (px,pz), written into out */
+  solidsNear(px, pz, out) {
+    out.length = 0;
+    const ccx = Math.floor(px / CHUNK), ccz = Math.floor(pz / CHUNK);
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const c = this.chunks.get(ccx + i + ',' + (ccz + j));
+      if (!c) continue;
+      for (const s of c.solids) {
+        if (s.tree && s.tree.hidden) continue;
+        if (Math.abs(s.x - px) < 4 && Math.abs(s.z - pz) < 4) out.push(s);
+      }
+    }
+    return out;
   }
 
   /** tree record by key "wi,wj", if its chunk is loaded */

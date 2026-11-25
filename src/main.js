@@ -15,6 +15,7 @@ import { createCampfires } from './campfire.js';
 import { createForestry } from './forestry.js';
 import { createActions } from './actions.js';
 import { createInventory } from './inventory.js';
+import { createPhysics, WALK, SWIM_Y } from './physics.js';
 
 // Keep the authored (non-linear) colours looking as designed.
 THREE.ColorManagement.enabled = false;
@@ -43,16 +44,16 @@ const grass = createGrass(scene);
 const fx = createFx(scene);
 const fires = createCampfires(scene, fx);
 const forestry = createForestry(world);
+const physics = createPhysics(world, fires);
 
-const SWIM_DEPTH = -1.15, SWIM_Y = -1.1;
-const P = { x: 0, y: 0, z: 0, vy: 0, face: 0, grounded: true, swim: false };
+const P = { x: 0, y: 0, z: 0, vx: 0, vz: 0, vy: 0, face: 0, grounded: true, swim: false, jumping: false, sliding: false, land: 0 };
 const cam = { yaw: 0.6, pitch: 0.38, dist: 9, cur: 9 };
 
 const map = createMap(progress, () => P);
 const inventory = createInventory(progress);
 const actions = createActions({ P, fires, fx, progress, onPickup: (t) => inventory.flash(t) });
 const input = createInput({
-  onJump() { if (!actions.busy && P.grounded && !P.swim) { P.vy = 9.5; P.grounded = false; } },
+  onJump() { if (!actions.busy) physics.jump(P); },
   onMap: () => map.toggle(),
   onLook(dx, dy) { cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch + dy * 0.004, 0.05, 1.25); },
   onZoom(d) { cam.dist = clamp(cam.dist + d * 0.01, 4, 18); },
@@ -110,26 +111,26 @@ function step(now) {
   const fwdX = -Math.sin(cam.yaw), fwdZ = -Math.cos(cam.yaw), rgtX = Math.cos(cam.yaw), rgtZ = -Math.sin(cam.yaw);
   let mx = fwdX * -inp.y + rgtX * inp.x, mz = fwdZ * -inp.y + rgtZ * inp.x;
   const ml = Math.hypot(mx, mz);
-  P.swim = sample(P.x, P.z).h < SWIM_DEPTH;
-  const speed = (inp.run ? 15 : 7.5) * (P.swim ? 0.55 : 1);
+  let wx = 0, wz = 0;
   if (!actions.busy && ml > 0.01 && mag > 0.08) {
     mx /= ml; mz /= ml;
-    P.x += mx * speed * mag * dt;
-    P.z += mz * speed * mag * dt;
+    wx = mx * mag; wz = mz * mag;
     let d = Math.atan2(mx, mz) - P.face;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     P.face += d * Math.min(1, dt * 12);
-  } else mag = 0;
+  }
+  if (actions.busy) { P.vx *= 0.8; P.vz *= 0.8; }
+  const ph = physics.step(P, dt, wx, wz, inp.run && !actions.busy);
+  if (ph.impact > 11) {
+    P.land = Math.min(1, (ph.impact - 9) / 10);
+    fx.smoke(P.x, P.y + 0.1, P.z, 3);
+  }
+  if (ph.splash > 4) fx.splash(P.x, SWIM_Y + 1.1, P.z, Math.min(14, 4 + ph.splash));
+  P.land = Math.max(0, P.land - dt * 3);
 
-  // vertical
-  const ground = sample(P.x, P.z).h, floor = ground < SWIM_DEPTH ? SWIM_Y : ground;
-  P.vy -= 26 * dt;
-  P.y += P.vy * dt;
-  if (P.y <= floor) { P.y = floor; P.vy = 0; P.grounded = true; }
-  else if (P.y - floor > 0.25 && !P.swim) P.grounded = false;
-  if (P.swim) { P.y = mix(P.y, SWIM_Y, Math.min(1, dt * 6)); P.vy = 0; P.grounded = true; }
-
-  hero.animate(dt, P, mag, inp.run, actPose);
+  // animate from actual ground speed so inertia and slopes show in the stride
+  const hs = Math.hypot(P.vx, P.vz);
+  hero.animate(dt, P, Math.min(1, hs / WALK), hs > WALK * 1.3, actPose);
 
   // third-person camera, kept above terrain
   // trees between hero and camera dissolve (see forestry.occlude)
@@ -169,6 +170,7 @@ function begin(cont) {
   if (pos) { try { t = parseFloat(localStorage.getItem(TIME_KEY)) || 0.3; } catch { /* storage unavailable */ } }
   env.time = t;
   P.y = Math.max(sample(P.x, P.z).h, SWIM_Y);
+  P.vx = P.vz = P.vy = 0;
   world.update(P.x, P.z, true);
   document.getElementById('start').hidden = true;
   started = true;

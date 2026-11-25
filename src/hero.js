@@ -77,6 +77,9 @@ export function createHero(scene) {
           armLZ: p.swim ? -0.9 + Math.sin(walkT) * 0.3 : 0,
           armRZ: p.swim ? 0.9 - Math.sin(walkT) * 0.3 : 0,
         });
+        const lk = p.land || 0; // landing squash, 0..1
+        tg.drop = -0.3 * lk; tg.lean += 0.25 * lk; tg.legL -= 0.5 * lk; tg.legR -= 0.5 * lk;
+        tg.armLZ -= 0.4 * lk; tg.armRZ += 0.4 * lk;
         rate = 25;
       }
       const a = Math.min(1, dt * rate);

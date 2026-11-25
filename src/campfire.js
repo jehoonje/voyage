@@ -104,6 +104,7 @@ export function createCampfires(scene, fx) {
   return {
     spawn,
     glow,
+    colliders() { return fires.filter((f) => f.state !== 'ash').map((f) => ({ x: f.x, z: f.z, r: 0.6, top: f.y + 0.45 })); },
     /** 0 = day, 1 = night: at night the fire lights a wider area */
     setNight(n) { night = n; },
     /** 0..1: logs and stones appear */

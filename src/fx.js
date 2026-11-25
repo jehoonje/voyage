@@ -11,6 +11,15 @@ export function createFx(scene) {
     return { m, life: 0, vx: 0, vy: 0, vz: 0, floor: 0 };
   });
 
+  const dropMat = new THREE.MeshBasicMaterial({ color: 0xd8f0ff, transparent: true, opacity: 0.85 });
+  const dropGeo = new THREE.IcosahedronGeometry(0.07, 0);
+  const drops = Array.from({ length: 20 }, () => {
+    const m = new THREE.Mesh(dropGeo, dropMat);
+    m.visible = false;
+    scene.add(m);
+    return { m, life: 0, vx: 0, vy: 0, vz: 0, floor: 0 };
+  });
+
   const puffGeo = new THREE.IcosahedronGeometry(0.3, 0);
   const puffs = Array.from({ length: 24 }, () => {
     const mat = new THREE.MeshLambertMaterial({ color: 0x9a9690, transparent: true, opacity: 0, depthWrite: false });
@@ -32,6 +41,17 @@ export function createFx(scene) {
         if (++k >= n) break;
       }
     },
+    splash(x, y, z, n = 10) {
+      let k = 0;
+      for (const c of drops) {
+        if (c.life > 0) continue;
+        const a = Math.random() * 6.283, s = 1 + Math.random() * 2;
+        Object.assign(c, { life: 0.8, vx: Math.cos(a) * s, vy: 3 + Math.random() * 3, vz: Math.sin(a) * s, floor: y - 0.1 });
+        c.m.position.set(x, y, z);
+        c.m.visible = true;
+        if (++k >= n) break;
+      }
+    },
     smoke(x, y, z, n = 8) {
       let k = 0;
       for (const p of puffs) {
@@ -42,7 +62,7 @@ export function createFx(scene) {
       }
     },
     update(dt) {
-      for (const c of chips) {
+      for (const c of [...chips, ...drops]) {
         if (c.life <= 0) continue;
         c.life -= dt;
         c.vy -= 14 * dt;
