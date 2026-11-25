@@ -265,6 +265,47 @@ function buildFace(face, s) {
   return lids;
 }
 
+/* ================= key-pose run cycle ================= */
+/** periodic track through [t, value] keys (t in 0..1), smooth Catmull-Rom between them */
+function track(keys) {
+  const n = keys.length;
+  // key k (any integer) wraps around the loop, keeping time increasing
+  const at = (k) => { const m = ((k % n) + n) % n; return [keys[m][0] + Math.floor(k / n), keys[m][1]]; };
+  return (u) => {
+    u -= Math.floor(u);
+    let i = -1;
+    while (i + 1 < n && keys[i + 1][0] <= u) i++;
+    const [t0, p0] = at(i - 1), [t1, p1] = at(i), [t2, p2] = at(i + 1), [t3, p3] = at(i + 2);
+    const span = t2 - t1, x = (u - t1) / span;
+    const m1 = ((p2 - p0) / (t2 - t0)) * span, m2 = ((p3 - p1) / (t3 - t1)) * span;
+    const x2 = x * x, x3 = x2 * x;
+    return (2 * x3 - 3 * x2 + 1) * p1 + (x3 - 2 * x2 + x) * m1 + (-2 * x3 + 3 * x2) * p2 + (x3 - x2) * m2;
+  };
+}
+/*
+ * One leg through a run stride, u = 0 at its own foot strike:
+ *   0 contact (foot ahead) · .12 down (weight sinks, knee gives) · .3 push-off · .42 toes leave
+ *   .55–.7 heel folds up under the seat · .8 knee drives high in front · .92 reaching for the next strike
+ * thigh: + = back · knee: + = bent · foot: ground-relative, + = toes down
+ */
+const RUN_LEG = {
+  thigh: track([[0, -0.36], [0.12, -0.1], [0.3, 0.3], [0.42, 0.42], [0.55, 0.2], [0.7, -0.3], [0.82, -0.68], [0.92, -0.58]]),
+  knee: track([[0, 0.14], [0.12, 0.42], [0.3, 0.2], [0.42, 0.45], [0.55, 1.55], [0.68, 1.9], [0.82, 1.2], [0.92, 0.4]]),
+  foot: track([[0, -0.18], [0.12, 0.0], [0.3, 0.35], [0.42, 0.75], [0.55, 0.5], [0.72, 0.15], [0.86, -0.1]]),
+};
+/* body over one full cycle (left strike at 0, right strike at .5) */
+const RUN_BODY = {
+  // hips: sink after each strike, float during the flight between steps
+  drop: track([[0, -0.01], [0.1, -0.045], [0.25, 0.0], [0.37, 0.03], [0.5, -0.01], [0.6, -0.045], [0.75, 0.0], [0.87, 0.03]]),
+  lean: track([[0, 0.27], [0.1, 0.32], [0.3, 0.25], [0.5, 0.27], [0.6, 0.32], [0.8, 0.25]]),
+};
+/** left arm: forward as the right leg strikes, back as the left does; elbow closes in front */
+const RUN_ARM = {
+  x: track([[0, 0.6], [0.1, 0.62], [0.3, 0.05], [0.5, -0.62], [0.6, -0.66], [0.8, 0.0]]),
+  elbow: track([[0, -1.2], [0.15, -1.25], [0.35, -1.65], [0.55, -2.1], [0.7, -1.95], [0.9, -1.45]]),
+  y: track([[0, -0.05], [0.25, 0.12], [0.55, 0.38], [0.8, 0.15]]),
+};
+
 /* ================= the character ================= */
 export function createCharacter(scene) {
   const root = new THREE.Group();
@@ -322,7 +363,7 @@ export function createCharacter(scene) {
   }
 
   // extra channels only locomotion drives (action poses leave them at 0)
-  const KEYS = [...POSE_KEYS, 'hipYaw', 'sway', 'shiftX', 'chestRoll', 'headX', 'headY', 'toeL', 'toeR'];
+  const KEYS = [...POSE_KEYS, 'hipYaw', 'sway', 'shiftX', 'chestRoll', 'headX', 'headY', 'toeL', 'toeR', 'armLY', 'armRY'];
   const cur = Object.fromEntries(KEYS.map((k) => [k, 0]));
   const tg = { ...cur };
   let phase = 0, breathT = 0, blinkT = 2, moveW = 0, runW = 0, airT = 0;
@@ -381,6 +422,26 @@ export function createCharacter(scene) {
           armLZ: -0.07 - 0.07 * r - 0.02 * idle * Math.sin(breathT * 1.7),
           armRZ: 0.07 + 0.07 * r + 0.02 * idle * Math.sin(breathT * 1.7),
         });
+        // running: blend toward the key-pose cycle as speed climbs past a walk
+        if (r > 0.001 && !p.swim) {
+          const u = f / (Math.PI * 2) - 0.75; // align: left foot strike where the walk has the left leg forward
+          const legKeys = (ul) => {
+            const th = RUN_LEG.thigh(ul), kn = RUN_LEG.knee(ul);
+            return [th, kn, RUN_LEG.foot(ul) + 0.15 * (th + kn)]; // foot bone is 85% counter-rotated below
+          };
+          const [thL, knL, ftL] = legKeys(u), [thR, knR, ftR] = legKeys(u + 0.5);
+          const rk = (key, v) => { tg[key] += (v * w - tg[key]) * r; };
+          rk('legL', thL); rk('legR', thR); rk('kneeL', knL); rk('kneeR', knR); rk('toeL', ftL); rk('toeR', ftR);
+          rk('drop', RUN_BODY.drop(u)); rk('lean', RUN_BODY.lean(u));
+          rk('hipYaw', 0.16 * Math.cos((u) * Math.PI * 2)); // the striking leg's hip reaches forward
+          rk('sway', 0.05 * Math.sin(u * Math.PI * 2)); rk('shiftX', 0); rk('chestRoll', -0.03 * Math.sin(u * Math.PI * 2));
+          rk('headX', 0.05 * Math.cos(u * Math.PI * 4 + 0.6));
+          rk('armLX', RUN_ARM.x(u)); rk('armRX', RUN_ARM.x(u + 0.5));
+          rk('elbowL', RUN_ARM.elbow(u)); rk('elbowR', RUN_ARM.elbow(u + 0.5));
+          rk('armLY', RUN_ARM.y(u)); rk('armRY', -RUN_ARM.y(u + 0.5));
+          rk('armLZ', -0.12); rk('armRZ', 0.12);
+          // (rk scales by w, so arms rest naturally if the run fades out mid-stride)
+        }
         if (p.swim) {
           Object.assign(tg, {
             armLZ: -0.9 + Math.sin(f) * 0.35, armRZ: 0.9 - Math.sin(f) * 0.35, armLX: -0.3 + Math.cos(f) * 0.3, armRX: -0.3 - Math.cos(f) * 0.3,
@@ -414,7 +475,7 @@ export function createCharacter(scene) {
       J.thighL.rotation.set(cur.legL, 0, -cur.sway); J.thighR.rotation.set(cur.legR, 0, -cur.sway);
       J.shinL.rotation.x = cur.kneeL; J.shinR.rotation.x = cur.kneeR;
       J.footL.rotation.x = -(cur.legL + cur.kneeL) * 0.85 + cur.toeL; J.footR.rotation.x = -(cur.legR + cur.kneeR) * 0.85 + cur.toeR;
-      J.upperArmL.rotation.set(cur.armLX, 0, cur.armLZ); J.upperArmR.rotation.set(cur.armRX, 0, cur.armRZ);
+      J.upperArmL.rotation.set(cur.armLX, cur.armLY, cur.armLZ); J.upperArmR.rotation.set(cur.armRX, cur.armRY, cur.armRZ);
       J.foreArmL.rotation.x = cur.elbowL; J.foreArmR.rotation.x = cur.elbowR;
       axe.visible = !!(target && target.axe);
       // blink every few seconds
