@@ -4,9 +4,11 @@ import { sample } from './world.js';
 import { felled, poseTree, RESPAWN_MS } from './forestry.js';
 
 const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
-const STAND = { drop: 0, back: 0, lean: 0, twist: 0, legL: 0, legR: 0, armLX: 0, armRX: 0, armLZ: 0, armRZ: 0 };
-const KNEEL = { ...STAND, drop: -0.36, lean: 0.45, legL: -1.3, legR: 1.0, armLX: -1.0, armRX: -1.0 };
-const SIT = { ...STAND, drop: -0.62, back: -0.35, lean: -0.08, legL: -1.45, legR: -1.4, armLX: -0.95, armRX: -0.95, armLZ: 0.12, armRZ: -0.12 };
+const STAND = { drop: 0, back: 0, lean: 0, twist: 0, legL: 0, legR: 0, kneeL: 0.04, kneeR: 0.04, armLX: 0, armRX: 0, armLZ: -0.06, armRZ: 0.06, elbowL: -0.2, elbowR: -0.2 };
+// one knee up, the other on the ground behind
+const KNEEL = { ...STAND, drop: -0.45, lean: 0.4, legL: -1.4, kneeL: 1.45, legR: 0.25, kneeR: 1.3, armLX: -0.9, armRX: -0.9, elbowL: -0.4, elbowR: -0.4 };
+// sitting on the ground, knees drawn up, hands out toward the fire
+const SIT = { ...STAND, drop: -0.76, back: -0.3, lean: -0.1, legL: -2.0, legR: -1.9, kneeL: 1.5, kneeR: 1.45, armLX: -0.9, armRX: -0.9, armLZ: 0.1, armRZ: -0.1, elbowL: -0.55, elbowR: -0.55 };
 const FIRE_DIST = 1.35, SWING = 0.85, SWINGS = 3;
 export const CAMP_COST = 6;
 
@@ -81,7 +83,7 @@ export function createActions({ P, fires, fx, progress, onPickup }) {
       if (tt < 0.45) { a = -0.3 - 2.4 * ease(tt / 0.45); tw = 0.35 * ease(tt / 0.45); }
       else if (tt < 0.6) { a = -2.7 + 1.45 * ease((tt - 0.45) / 0.15); tw = 0.35 * (1 - ease((tt - 0.45) / 0.15)); }
       else { a = -1.25 + 0.85 * ease((tt - 0.6) / 0.25); tw = 0; }
-      set(STAND, { armRX: a, armLX: a + 0.15, armLZ: 0.35, armRZ: -0.1, twist: tw, lean: tt > 0.45 && tt < 0.75 ? 0.22 : 0.05, legL: -0.25, legR: 0.25, axe: true });
+      set(STAND, { armRX: a, armLX: a + 0.15, armLZ: 0.35, armRZ: -0.1, elbowL: -0.35, elbowR: -0.15, twist: tw, lean: tt > 0.45 && tt < 0.75 ? 0.22 : 0.05, legL: -0.3, kneeL: 0.25, legR: 0.25, kneeR: 0.2, axe: true });
       if (tt >= 0.56 && !hit) {
         hit = true; wobT = 0;
         fx.chips(tree.x - dir[0] * 0.4, tree.y + 0.9, tree.z - dir[1] * 0.4, 7, tree.y + 0.05);
