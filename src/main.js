@@ -1,7 +1,7 @@
 // Entry: renderer, player physics, camera, and the main loop.
 import * as THREE from 'three';
 import { clamp, mix } from './noise.js';
-import { sample, biome } from './world.js';
+import { sample, biome, weights } from './world.js';
 import { ChunkManager } from './chunks.js';
 import { createEnvironment } from './sky.js';
 import { createCharacter, loadSpec } from './character/character.js';
@@ -21,6 +21,8 @@ import { createActions } from './actions.js';
 import { createInventory } from './inventory.js';
 import { createPhysics, SWIM_Y } from './physics.js';
 import { createPost } from './post.js';
+import { createWeather } from './weather.js';
+import { createAmbience } from './ambience.js';
 
 // Keep the authored (non-linear) colours looking as designed.
 THREE.ColorManagement.enabled = false;
@@ -47,6 +49,42 @@ const draw = (now) => post.render(scene, camera, now / 1000, env.light.dusk, env
 
 const env = createEnvironment(scene);
 const world = new ChunkManager(scene);
+const DEBUG = new URLSearchParams(location.search); // testing aid: ?at=x,z  &t=0..1 (clock)  &w=weather
+const weather = createWeather(scene, { force: DEBUG.get('w') });
+const ambience = createAmbience(scene);
+
+/* what surrounds the player, averaged over a small ring and eased over time */
+const bio = { desert: 0, jungle: 0, forest: 0, meadow: 0, sea: 0, snow: 0, cold: 0 };
+const bioT = { ...bio };
+let bioTimer = 0;
+const RING = [[0, 0], [14, 0], [-14, 0], [0, 14], [0, -14], [24, 24], [-24, -24], [24, -24], [-24, 24]];
+function updateBio(dt, x, z, snap = false) {
+  if ((bioTimer -= dt) <= 0 || snap) {
+    bioTimer = 0.4;
+    for (const k in bioT) bioT[k] = 0;
+    for (const [ox, oz] of RING) {
+      const s = sample(x + ox, z + oz), b = biome(s), [d, w, f] = weights(s), land = s.h > 0 ? 1 : 0;
+      bioT.desert += (b === 'desert' ? 1 : d * land * 0.5);
+      bioT.jungle += b === 'jungle' ? 1 : 0;
+      bioT.forest += b === 'forest' ? 1 : 0;
+      bioT.meadow += b === 'meadow' ? 1 : 0;
+      bioT.sea += b === 'sea' ? 1 : 0;
+      bioT.snow += b === 'snow' ? 1 : 0;
+      bioT.cold += Math.max(b === 'snow' ? 1 : 0, Math.min(1, Math.max(0, (s.h - 42) / 12)) * (1 - d));
+    }
+    for (const k in bioT) bioT[k] /= RING.length;
+  }
+  const k = snap ? 1 : Math.min(1, dt * 0.6);
+  for (const kk in bio) bio[kk] += (bioT[kk] - bio[kk]) * k;
+}
+weather.onChange((st) => {
+  if (!started) return;
+  const what = bio.cold > 0.5 ? { rain: ['눈', '눈이 내리기 시작해요'], storm: ['눈보라', '거센 눈보라가 몰아쳐요'] }
+    : bio.desert > 0.5 ? { rain: ['모래바람', '모래바람이 불어와요'], storm: ['모래폭풍', '앞이 보이지 않을 만큼 모래가 일어요'] }
+    : { rain: ['비', '비가 내리기 시작해요'], storm: ['폭풍우', '천둥이 치기 시작해요'] };
+  const msg = what[st] || (st === 'fog' ? ['안개', '안개가 짙게 깔려요'] : st === 'clear' ? ['맑음', '하늘이 활짝 개었어요'] : null);
+  if (msg) progress.toast('날씨', msg[0], msg[1]);
+});
 const hero = createCharacter(scene);
 const savedSpec = loadSpec();
 hero.apply(savedSpec || DEFAULT_SPEC).catch(() => { /* retried when the creator opens */ });
@@ -183,7 +221,10 @@ function step(now) {
   windTime.value = now / 1000;
   rimLight.value = 0.06 + 0.3 * env.light.day;
   grass.update(P.x, P.z);
-  env.update(dt, now, P.x, P.z, P.y, camera);
+  updateBio(dt, P.x, P.z);
+  const sky = weather.update(dt, camera, bio, env.light);
+  env.update(dt, now, P.x, P.z, P.y, camera, bio, sky);
+  ambience.update(dt, now, camera, P.x, P.y, P.z, bio, env.light, sky, env.sun);
   fires.setNight(env.light.night);
   grass.setLight(env.light.amb, env.light.sun, fires.glow.strength > 0 ? fires.glow : null);
   updateDayNight(dt);
@@ -200,12 +241,16 @@ function begin(cont) {
   const pos = cont ? progress.load() : null;
   if (pos) { P.x = pos.x; P.z = pos.z; }
   else { [P.x, P.z] = findSpawn(); progress.reset(); }
+  if (!cont && DEBUG.has('at')) { const [x, z] = DEBUG.get('at').split(',').map(Number); if (isFinite(x) && isFinite(z)) { P.x = x; P.z = z; } }
   let t = 0.3;
   if (pos) { try { t = parseFloat(localStorage.getItem(TIME_KEY)) || 0.3; } catch { /* storage unavailable */ } }
+  if (DEBUG.has('t')) t = parseFloat(DEBUG.get('t')) || t;
+  if (DEBUG.has('cam')) { const [pt, ds, yw] = DEBUG.get('cam').split(',').map(Number); if (isFinite(pt)) cam.pitch = pt; if (isFinite(ds)) cam.dist = ds; if (isFinite(yw)) cam.yaw = yw; }
   env.time = t;
   P.y = Math.max(sample(P.x, P.z).h, SWIM_Y);
   P.vx = P.vz = P.vy = 0;
   world.update(P.x, P.z, true);
+  updateBio(0, P.x, P.z, true); // know the land at once (no rain falling on a desert for the first seconds)
   document.getElementById('start').hidden = true;
   started = true;
 }

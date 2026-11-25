@@ -4,7 +4,8 @@
 // Vertex colours carry ambient occlusion: darker inside and underneath.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { hash2, sstep } from './noise.js';
+import { hash2, sstep, vnoise } from './noise.js';
+import { meshRaw, ellipsoid, roundBox, cone, smin, smax } from './character/sculpt.js';
 
 /* ---------- seeded helpers ---------- */
 let s = 1;
@@ -194,6 +195,51 @@ function faceted(parts, { jitter = 0, shade = [0.6, 1.12], moss = 0, seed: sd = 
   return g;
 }
 
+/** repaint vertex colours: fn(t = 0..1 height, ny = normal.y, x, y, z) → [r, g, b] */
+function paint(g, fn) {
+  const p = g.attributes.position, n = g.attributes.normal, c = g.attributes.color;
+  let y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < p.count; i++) { y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i)); }
+  for (let i = 0; i < p.count; i++) {
+    const [r, gg, b] = fn((p.getY(i) - y0) / Math.max(1e-3, y1 - y0), n.getY(i), p.getX(i), p.getY(i), p.getZ(i));
+    c.setXYZ(i, r, gg, b);
+  }
+  return g;
+}
+/** layered red sandstone, as in desert cliffs */
+const SANDSTONE = [[0.62, 0.31, 0.21], [0.8, 0.49, 0.3], [0.9, 0.74, 0.55], [0.56, 0.27, 0.19], [0.74, 0.42, 0.27]];
+function sandstone(x, y, z, ny) {
+  const b = SANDSTONE[Math.floor(((y * 1.1 + vnoise(x * 0.7, z * 0.7) * 0.35) % 5 + 5) % 5)];
+  const v = 0.82 + 0.18 * Math.max(0, ny) + vnoise(x * 3 + y, z * 3) * 0.06;
+  return [b[0] * v, b[1] * v, b[2] * v];
+}
+/** wet dark foot, grey-brown rock, a green cap of moss and grass on top and ledges */
+function mossyStone(t, ny, x, y, z) {
+  const m = sstep(0.55, 0.85, t) * 0.7 + sstep(0.35, 0.75, ny) * 0.7 + (vnoise(x * 1.3, z * 1.3 + y) * 0.5 + 0.5) * 0.25 * sstep(0.4, 0.8, t);
+  const k = Math.min(1, m), v = 0.75 + 0.25 * t + vnoise(x * 2 + y * 3, z * 2) * 0.08;
+  const rock = [0.52 * v, 0.48 * v, 0.42 * v], moss = [0.32 * v, 0.5 * v, 0.2 * v];
+  const wet = 1 - 0.35 * (1 - sstep(0.05, 0.25, t));
+  return [(rock[0] + (moss[0] - rock[0]) * k) * wet, (rock[1] + (moss[1] - rock[1]) * k) * wet, (rock[2] + (moss[2] - rock[2]) * k) * wet];
+}
+function sculpted(sdf, min, max, cell) {
+  const r = meshRaw(sdf, min, max, cell), g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(r.position, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(r.normal, 3));
+  g.setIndex(new THREE.BufferAttribute(r.index, 1));
+  return g;
+}
+/** an arching frond strip from the ground: u along, v across (centre line at v = 0.5) */
+function frondStrip(cards, a, len, lift, droop, W, segs = 5, base = 0.05) {
+  const dx = Math.cos(a), dz = Math.sin(a), sx = -dz, sz = dx;
+  const at = (t) => V(dx * len * t, base + lift * t - droop * t * t, dz * len * t);
+  for (let i = 0; i < segs; i++) {
+    const t0 = i / segs, t1 = (i + 1) / segs, p0 = at(t0), p1 = at(t1), n = V(dx * 0.3, 1, dz * 0.3).normalize();
+    const w0 = W * (0.5 + 0.5 * Math.sin(Math.PI * Math.min(1, t0 + 0.15))), w1 = W * (0.5 + 0.5 * Math.sin(Math.PI * Math.min(1, t1 + 0.15)));
+    cards.quad(p0.clone().add(V(-sx * w0, 0, -sz * w0)), p1.clone().add(V(-sx * w1, 0, -sz * w1)), p1.clone().add(V(sx * w1, 0, sz * w1)), p0.clone().add(V(sx * w0, 0, sz * w0)),
+      [[t0, 0], [t1, 0], [t1, 1], [t0, 1]], [n, n, n, n], [0.5 + 0.55 * t0, 0.5 + 0.55 * t1, 0.5 + 0.55 * t1, 0.5 + 0.55 * t0]);
+  }
+}
+
 /* ---------- models ---------- */
 
 export function buildModels() {
@@ -307,6 +353,85 @@ export function buildModels() {
     ...arm(1, 1.5, 1), ...arm(-1, 1.95, 0.8),
   ], { jitter: 0.015, shade: [0.68, 1.06] });
   M.rock = faceted([new THREE.DodecahedronGeometry(1, 2)], { jitter: 0.12, shade: [0.55, 1.08], moss: 0.85, seed: 6 });
+  M.boulder = faceted([new THREE.DodecahedronGeometry(1, 2)], { jitter: 0.12, shade: [0.6, 1.08], seed: 6 }); // bare (desert, snow)
+
+  // fern: a low rosette of arching fronds
+  seed(8);
+  {
+    const cards = new Cards();
+    for (let k = 0; k < 11; k++) frondStrip(cards, (k / 11) * 6.283 + rnd() * 0.4, 1.1 * (0.8 + rnd() * 0.4), 0.9 + rnd() * 0.3, 1.15, 0.24);
+    M.fern = cards.geometry();
+  }
+  // big tropical leaves (banana / elephant ear) rising on long stems and bending out
+  seed(9);
+  {
+    const cards = new Cards(), UVL = 6;
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 7) * 6.283 + rnd() * 0.5, dx = Math.cos(a), dz = Math.sin(a), sx = -dz, sz = dx;
+      const L = 1.7 + rnd() * 0.8, W = 0.45 + rnd() * 0.15;
+      const at = (t) => V(dx * (0.1 + L * 0.75 * Math.pow(t, 1.4)), L * (1.05 * t - 0.45 * t * t), dz * (0.1 + L * 0.75 * Math.pow(t, 1.4)));
+      for (let i = 0; i < UVL; i++) {
+        const t0 = i / UVL, t1 = (i + 1) / UVL, p0 = at(t0), p1 = at(t1), n = V(dx * 0.2, 1, dz * 0.2).normalize();
+        cards.quad(p0.clone().add(V(-sx * W, 0, -sz * W)), p0.clone().add(V(sx * W, 0, sz * W)), p1.clone().add(V(sx * W, 0, sz * W)), p1.clone().add(V(-sx * W, 0, -sz * W)),
+          [[0, t0], [1, t0], [1, t1], [0, t1]], [n, n, n, n], [0.45 + 0.6 * t0, 0.45 + 0.6 * t0, 0.45 + 0.6 * t1, 0.45 + 0.6 * t1]);
+      }
+    }
+    M.bigleaf = cards.geometry();
+  }
+
+  // sea stack / crag: a weathered pillar of stacked drums with a mossy, grassy crown
+  seed(10);
+  {
+    const parts = [];
+    let y = 0, r = 1.6;
+    for (let i = 0; i < 4; i++) {
+      const hh = 2.3 + rnd() * 1.3, r1 = r * (0.72 + rnd() * 0.3);
+      parts.push(new THREE.CylinderGeometry(r1, r, hh, 9, 2).translate((rnd() - 0.5) * 0.5, y + hh / 2, (rnd() - 0.5) * 0.5));
+      y += hh * 0.9; r = r1;
+    }
+    parts.push(new THREE.SphereGeometry(r * 1.3, 10, 5).scale(1, 0.5, 1).translate(0, y, 0));
+    parts.push(new THREE.SphereGeometry(1.25, 8, 4).scale(1, 0.6, 1).translate(1.2, 4.6, 0.3)); // a mossy ledge
+    M.seastack = paint(faceted(parts, { jitter: 0.2, seed: 3 }), mossyStone);
+  }
+
+  // desert: banded red boulder, a hoodoo (thin column under a cap stone), bones, and a buried stone head
+  M.redrock = paint(faceted([new THREE.DodecahedronGeometry(1, 2)], { jitter: 0.14, seed: 11 }), (t, ny, x, y, z) => sandstone(x, y * 2.2, z, ny));
+  seed(12);
+  {
+    const parts = [new THREE.CylinderGeometry(1.0, 1.6, 2.2, 9, 2).translate(0, 1.1, 0), new THREE.CylinderGeometry(0.55, 0.95, 2.6, 8, 2).translate(0.1, 3.4, 0),
+      new THREE.CylinderGeometry(0.7, 0.5, 1.6, 8, 2).translate(0.15, 5.3, 0), new THREE.CylinderGeometry(1.25, 1.05, 0.9, 9, 1).translate(0.2, 6.5, 0.1)];
+    M.hoodoo = paint(faceted(parts, { jitter: 0.12, seed: 12 }), (t, ny, x, y, z) => sandstone(x, y, z, ny));
+  }
+  {
+    const bone = [];
+    const skull = new THREE.SphereGeometry(0.22, 8, 6).scale(1, 0.85, 1.25).translate(0.9, 0.2, 0);
+    bone.push(skull, new THREE.BoxGeometry(0.16, 0.1, 0.3).translate(0.9, 0.08, 0.28));
+    for (let i = 0; i < 6; i++) { // ribs: half rings along a spine
+      const rib = new THREE.TorusGeometry(0.32 - i * 0.02, 0.025, 4, 10, Math.PI).rotateY(Math.PI / 2).translate(-0.1 - i * 0.16, 0.05, 0);
+      bone.push(rib);
+    }
+    bone.push(new THREE.CylinderGeometry(0.035, 0.035, 1.6, 5).rotateZ(Math.PI / 2).translate(-0.1, 0.32, 0));
+    bone.push(new THREE.CylinderGeometry(0.03, 0.03, 0.8, 5).rotateZ(1.2).translate(-1.3, 0.05, 0.35), new THREE.CylinderGeometry(0.03, 0.03, 0.7, 5).rotateZ(-1.3).translate(-1.4, 0.05, -0.3));
+    M.bones = paint(faceted(bone, { jitter: 0.004 }), (t) => [0.88 + t * 0.06, 0.84 + t * 0.06, 0.74 + t * 0.05]);
+  }
+  {
+    // a colossal head half sunk in the sand, gazing at the horizon
+    const head = (x, y, z) => {
+      let d = ellipsoid(x, y, z, [0, 3.3, 0], [2.05, 2.9, 2.15]);
+      d = smin(d, ellipsoid(x, y, z, [0, 1.6, 0.45], [1.55, 1.5, 1.6]), 0.7); // jaw
+      d = smin(d, ellipsoid(x, y, z, [0, 3.95, 1.55], [1.75, 0.38, 0.62]), 0.45); // brow
+      d = smin(d, cone(x, y, z, [0, 3.65, 2.0], [0, 2.55, 2.45], 0.22, 0.42), 0.3); // nose
+      for (const s of [-1, 1]) {
+        d = smax(d, -ellipsoid(x, y, z, [s * 0.78, 3.42, 2.05], [0.52, 0.3, 0.42]), 0.18); // eye sockets
+        d = smin(d, ellipsoid(x, y, z, [s * 0.75, 3.38, 1.82], [0.34, 0.2, 0.25]), 0.1); // lids
+      }
+      d = smin(d, ellipsoid(x, y, z, [0, 1.86, 1.86], [0.78, 0.26, 0.3]), 0.18); // lips
+      d = smax(d, -roundBox(x, y, z, [0, 1.84, 2.18], [0.62, 0.035, 0.3], 0.03), 0.05); // mouth line
+      return smax(d, -0.2 - y, 0.1);
+    };
+    const g = sculpted(head, [-2.8, -0.4, -2.6], [2.8, 6.6, 3.1], 0.15);
+    M.stonehead = paint(faceted([g.rotateZ(0.12).rotateX(-0.08)], { jitter: 0.03 }), (t, ny, x, y, z) => sandstone(x, y * 1.4, z, ny).map((v) => v * 0.95));
+  }
 
   return M;
 }

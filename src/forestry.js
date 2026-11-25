@@ -2,7 +2,7 @@
 // a tree record knows its meshes and instance index, so it can be posed alone.
 import * as THREE from 'three';
 
-export const CHOPPABLE = new Set(['pine', 'broad', 'jungle', 'palm', 'birch', 'willow']);
+export const CHOPPABLE = new Set(['pine', 'snowpine', 'broad', 'jungle', 'palm', 'birch', 'willow']);
 export const RESPAWN_MS = 45000;
 const GROW_MS = 2500;
 

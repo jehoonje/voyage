@@ -1,7 +1,7 @@
 // Streams terrain chunks around the player: build near, drop far, cull off-screen.
 import * as THREE from 'three';
-import { hash2 } from './noise.js';
-import { sample, biome, groundColor, splat } from './world.js';
+import { hash2, vnoise } from './noise.js';
+import { sample, biome, groundColor, splat, weights } from './world.js';
 import { createTerrainMaterial } from './terrainMaterial.js';
 import { TYPES, TINT, pickVegetation } from './vegetation.js';
 import { CHOPPABLE, felled, poseTree } from './forestry.js';
@@ -11,10 +11,13 @@ const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)
 // phones stream a smaller ring of chunks (dense foliage is expensive)
 const SEG = 16, RADIUS = touch ? 2 : 3, STEP = CHUNK / SEG, VEG_GRID = 4;
 /** trunk radius per type, before instance scale */
-const TRUNK_R = { pine: 0.3, broad: 0.36, jungle: 0.5, palm: 0.26, cactus: 0.42, birch: 0.17, willow: 0.5 };
+const TRUNK_R = { pine: 0.3, snowpine: 0.3, broad: 0.36, jungle: 0.5, palm: 0.26, cactus: 0.42, birch: 0.17, willow: 0.5 };
+/** solid props: [collider radius, scale range [min, span]] before instance scale */
+const PROPS = { seastack: [1.5, 0.8, 0.8], crag: [1.3, 0.5, 0.5], hoodoo: [1.2, 0.6, 0.7], stonehead: [2.4, 0.95, 0.25], redrock: [0, 0.6, 1.6], snowrock: [0, 0.6, 1.6], rock: [0, 0.6, 1.6] };
 /** [centre height, radius] spheres approximating each tree type, before instance scale */
 const OCCLUDERS = {
   pine: [[1.2, 0.45], [3.0, 1.8], [4.8, 1.3], [6.2, 0.8]],
+  snowpine: [[1.2, 0.45], [3.0, 1.8], [4.8, 1.3], [6.2, 0.8]],
   broad: [[1.2, 0.5], [3.8, 2.0]],
   jungle: [[2, 0.6], [4.5, 0.6], [7.4, 3.0]],
   palm: [[2.5, 0.4], [5.3, 2.4]],
@@ -39,7 +42,7 @@ export class ChunkManager {
   build(cx, cz) {
     const n = SEG + 1, W = SEG + 3, hg = new Float32Array(W * W);
     const pos = new Float32Array(n * n * 3), nor = new Float32Array(n * n * 3);
-    const cl = new Float32Array(n * n * 3), sw = new Float32Array(n * n * 4);
+    const cl = new Float32Array(n * n * 3), sw = new Float32Array(n * n * 4), dz = new Float32Array(n * n);
     const x0 = cx * CHUNK, z0 = cz * CHUNK;
     let hmin = 1e9, hmax = -1e9;
     const ss = [];
@@ -59,6 +62,7 @@ export class ChunkManager {
       groundColor(s, x, z, tmp);
       cl[k * 3] = tmp[0]; cl[k * 3 + 1] = tmp[1]; cl[k * 3 + 2] = tmp[2];
       splat(s, sw, k * 4);
+      dz[k] = weights(s)[0];
       if (s.h < hmin) hmin = s.h;
       if (s.h > hmax) hmax = s.h;
     }
@@ -72,6 +76,7 @@ export class ChunkManager {
     geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(cl, 3));
     geo.setAttribute('aW', new THREE.BufferAttribute(sw, 4));
+    geo.setAttribute('aD', new THREE.BufferAttribute(dz, 1));
     geo.setIndex(idx);
     geo.computeBoundingSphere();
 
@@ -96,7 +101,10 @@ export class ChunkManager {
       const r = hash2(wi * 3 + 1, wj * 7 + 2);
       if (r > 0.82) continue;
       const x = (wi + hash2(wi, wj * 5 + 9)) * VEG_GRID, z = (wj + hash2(wi * 11 + 3, wj)) * VEG_GRID;
-      const s = sample(x, z), t = pickVegetation(biome(s), r, s.h);
+      const s = sample(x, z), b = biome(s);
+      // landmarks: a rare colossal stone head somewhere in the dunes
+      let t = b === 'desert' && hash2(wi * 13 + 5, wj * 29 + 1) < 0.00005 && s.h < 30 ? 'stonehead'
+        : pickVegetation(b, r, s.h, b === 'sea' ? Math.max(0, vnoise(x * 0.012 + 40, z * 0.012 - 9)) : 0);
       if (!t) continue;
       (lists[t] || (lists[t] = [])).push(x, s.h - 0.15, z, hash2(wi + 77, wj - 31), wi, wj);
     }
@@ -114,10 +122,10 @@ export class ChunkManager {
         im.castShadow = true;
         if (mat.userData.depth) im.customDepthMaterial = mat.userData.depth; // leaf-shaped shadows
         for (let q = 0; q < cnt; q++) {
-          const rr = L[q * 6 + 3], sc = t === 'rock' ? 0.6 + rr * 1.6 : 0.75 + rr * 0.6;
-          dummy.position.set(L[q * 6], L[q * 6 + 1], L[q * 6 + 2]);
+          const rr = L[q * 6 + 3], P = PROPS[t], sc = P ? P[1] + rr * P[2] : 0.75 + rr * 0.6;
+          dummy.position.set(L[q * 6], L[q * 6 + 1] - (t === 'stonehead' ? 0.6 : 0), L[q * 6 + 2]);
           dummy.rotation.set(0, rr * 6.283, 0);
-          if (t === 'rock') dummy.scale.set(sc * (1 + rr), sc * 0.65, sc);
+          if (P && !P[0]) dummy.scale.set(sc * (1 + rr), sc * 0.65, sc); // boulders: squat
           else dummy.scale.setScalar(sc);
           dummy.updateMatrix();
           im.setMatrixAt(q, dummy.matrix);
@@ -139,12 +147,13 @@ export class ChunkManager {
           trees.set(key, tree);
           solids.push({ x: tree.x, z: tree.z, r: TRUNK_R[t] * tree.sc, top: Infinity, tree });
         }
-      } else if (t === 'cactus' || t === 'rock') {
+      } else if (t === 'cactus' || PROPS[t]) {
         for (let q = 0; q < cnt; q++) {
-          const rr = L[q * 6 + 3], x = L[q * 6], y = L[q * 6 + 1], z = L[q * 6 + 2];
+          const rr = L[q * 6 + 3], x = L[q * 6], y = L[q * 6 + 1], z = L[q * 6 + 2], P = PROPS[t];
           if (t === 'cactus') solids.push({ x, z, r: TRUNK_R.cactus * (0.75 + rr * 0.6), top: Infinity });
+          else if (P[0]) solids.push({ x, z, r: P[0] * (P[1] + rr * P[2]), top: Infinity }); // pillars and statues
           else {
-            const sc = 0.6 + rr * 1.6;
+            const sc = P[1] + rr * P[2];
             if (sc > 0.9) solids.push({ x, z, r: sc * (1 + rr * 0.5) * 0.8, top: y + sc * 0.6 });
           }
         }

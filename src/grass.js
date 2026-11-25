@@ -193,8 +193,10 @@ export function createGrass(scene) {
     place(x, z, r, s, out) {
       const b = biome(s);
       if (b === 'desert' || b === 'snow' || b === 'mountain') return 0;
+      if (b === 'sea') return 0; // open sea shallows stay clear
       const shore = sstep(-0.6, 0.2, s.h) * (1 - sstep(1.2, 2.2, s.h)); // band around the water's edge
-      if (r >= shore * 0.75) return 0;
+      // reeds belong to rivers and lakes; sandy sea beaches only get the odd clump
+      if (r >= shore * (b === 'beach' ? 0.12 : 0.75)) return 0;
       out[0] = 0.95; out[1] = 0.95; out[2] = 0.9;
       return 1.5 + r * 0.9;
     },

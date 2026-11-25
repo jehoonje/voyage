@@ -126,6 +126,54 @@ function palmFrond(id = 6) {
   return toTexture(c);
 }
 
+/** fern frond: thin rachis along x, rows of small rounded pinnae tapering to the tip */
+function fernFrond(id = 21) {
+  seed(id);
+  const [c, ctx] = canvas(512, 128);
+  ctx.strokeStyle = hsl(80, 35, 26); ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(0, 64); ctx.lineTo(500, 64); ctx.stroke();
+  for (let x = 14; x < 495; x += 9) {
+    const t = x / 512, len = 50 * Math.sin(Math.PI * Math.pow(t, 0.8)) + 4;
+    for (const side of [-1, 1]) {
+      const l = between(26, 40) * (0.8 + 0.4 * t), hu = between(92, 120);
+      for (let k = 0; k < 6; k++) { // each pinna: a row of tiny lobes
+        const u = k / 6, px = x + len * 0.25 * u, py = 64 + side * len * u;
+        leaf(ctx, px, py, 9 * (1 - u * 0.5) + 3, 4, side > 0 ? Math.PI * 0.75 : Math.PI * 0.25, hsl(hu, between(38, 52), l));
+      }
+    }
+  }
+  return toTexture(c);
+}
+
+/** big tropical leaf (banana / elephant ear): stem at the bottom, broad blade with side veins */
+function bigLeaf(id = 22) {
+  seed(id);
+  const [c, ctx] = canvas(256, 512);
+  ctx.strokeStyle = hsl(85, 35, 30); ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.moveTo(128, 512); ctx.lineTo(128, 330); ctx.stroke();
+  const g = ctx.createLinearGradient(0, 330, 0, 10);
+  g.addColorStop(0, hsl(105, 45, 22)); g.addColorStop(1, hsl(95, 50, 36));
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(128, 335);
+  ctx.bezierCurveTo(250, 300, 250, 90, 128, 8);
+  ctx.bezierCurveTo(6, 90, 6, 300, 128, 335);
+  ctx.fill();
+  // tears where the wind has split the blade
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 7; i++) {
+    const y = between(60, 300), side = rnd() < 0.5 ? -1 : 1;
+    ctx.lineWidth = between(1.5, 3); ctx.beginPath(); ctx.moveTo(128 + side * 120, y - 20); ctx.lineTo(128 + side * between(40, 80), y); ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.strokeStyle = hsl(75, 35, 52, 0.7); ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(128, 335); ctx.lineTo(128, 14); ctx.stroke();
+  ctx.lineWidth = 1.2; ctx.strokeStyle = hsl(80, 30, 45, 0.45);
+  for (let y = 40; y < 320; y += 14) for (const side of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(128, y + 10); ctx.quadraticCurveTo(128 + side * 50, y, 128 + side * 105, y - 18); ctx.stroke();
+  }
+  return toTexture(c);
+}
+
 /** bark: vertical fissures over a base colour; birch gets dark horizontal lenticels */
 function bark({ base, dark, light, birch = false, id = 7 }) {
   seed(id);
@@ -215,6 +263,8 @@ export function natureTextures() {
     pine: pineBranch(),
     willow: willowStrands(),
     palm: palmFrond(),
+    fern: fernFrond(),
+    bigleaf: bigLeaf(),
     barkBrown: bark({ base: hsl(28, 22, 26), dark: hsl(25, 25, 12), light: hsl(30, 15, 42), id: 7 }),
     barkBirch: bark({ base: hsl(45, 12, 84), dark: hsl(40, 8, 60), light: hsl(45, 10, 95), birch: true, id: 14 }),
     barkPalm: bark({ base: hsl(32, 22, 42), dark: hsl(28, 25, 24), light: hsl(35, 18, 58), id: 15 }),

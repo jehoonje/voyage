@@ -4,6 +4,7 @@ import { windTime, rimLight } from './wind.js';
 import { addFade } from './forestry.js';
 import { buildModels } from './treeModels.js';
 import { natureTextures } from './textures.js';
+import { ATMOS } from './atmos.js';
 
 const G = buildModels();
 
@@ -11,12 +12,16 @@ const G = buildModels();
  * Whole tree bends with the wind (more toward the top, trunk and crown together);
  * foliage also flutters, and lit edges get a soft rim of light.
  */
-function vegShader(mat, { flutter = false, rim = false, hang = false } = {}) {
+function vegShader(mat, { flutter = false, rim = false, hang = false, snow = 0 } = {}) {
+  // snow: 1 = always snow-covered; 0 = only while fresh snow is falling (ATMOS.snow)
+  const snowK = { value: snow };
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = windTime;
     sh.uniforms.uRim = rimLight;
+    sh.uniforms.uSnowK = snowK;
+    sh.uniforms.uSnowfall = ATMOS.snow;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime; varying float vUpN; varying vec3 vWPos;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 #ifdef USE_INSTANCING
   vec3 ip = instanceMatrix[3].xyz;
@@ -27,7 +32,23 @@ function vegShader(mat, { flutter = false, rim = false, hang = false } = {}) {
   transformed += vec3(sin(ph), sin(ph * 1.3) * .5, cos(ph * .9)) * .03 * smoothstep(1., 3., hy);` : ''}
   ${hang ? `float dn = max(4.6 - hy, 0.); // hanging strands swing from their tips
   transformed.xz += vec2(sin(uTime * 1.6 + ip.x * .3 + transformed.y * .8), cos(uTime * 1.3 + ip.z * .3 + transformed.y * .7)) * dn * .07;` : ''}
-#endif`);
+#endif`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+  { mat3 nm = mat3(modelMatrix);
+#ifdef USE_INSTANCING
+    nm = nm * mat3(instanceMatrix);
+#endif
+    vUpN = normalize(nm * objectNormal).y; vWPos = (modelMatrix * vec4(transformed, 1.)).xyz; }`);
+    // snow settles on whatever faces the sky, in uneven patches
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uSnowK, uSnowfall; varying float vUpN; varying vec3 vWPos;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+  { float k = max(uSnowK, uSnowfall * .75);
+    if (k > .01) {
+      float patchy = fract(sin(dot(floor(vWPos.xz * 2.3 + vWPos.y * 1.7), vec2(12.9898, 78.233))) * 43758.5453);
+      float sn = smoothstep(.15, .55, vUpN + (patchy - .5) * .35) * k;
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.93, .96, 1.), sn);
+    } }`);
     if (rim) {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform float uRim;')
@@ -61,14 +82,21 @@ const M = {
   pine: foliage(T.pine),
   palm: foliage(T.palm),
   willow: foliage(T.willow, { hang: true }),
+  fern: foliage(T.fern),
+  bigleaf: foliage(T.bigleaf),
+  snowPine: foliage(T.pine, { snow: 1 }),
+  snowBark: vegShader(Lm(0xffffff, { map: T.barkBrown }), { snow: 1 }),
   cact: vegShader(Lm(0x4f8a4a), { rim: true }),
   rock: vegShader(Lm(0x948f88)),
+  snowRock: vegShader(Lm(0x9a98a0), { snow: 1 }),
+  stone: vegShader(Lm(0xffffff)), // colours painted into the model
 };
 
 /** per-instance colour variation; leaf colour itself comes from the textures */
 export const TINT = {
   pine: [0.95, 1, 0.95], broad: [1, 1, 0.95], jungle: [0.95, 1, 0.95],
   bush: [1, 1, 0.95], palm: [1, 1, 0.95], birch: [1.02, 1, 0.92], willow: [1, 1, 0.92],
+  dry: [1.2, 0.86, 0.5], fern: [0.95, 1.05, 0.9], bigleaf: [1, 1.05, 0.95],
 };
 
 /** each type: list of [geometry, material, tintKey?] parts sharing one transform */
@@ -82,20 +110,33 @@ export const TYPES = {
   cactus: [[G.cactus, M.cact]],
   rock: [[G.rock, M.rock]],
   bush: [[G.bush, M.bush, 'bush']],
+  fern: [[G.fern, M.fern, 'fern']],
+  bigleaf: [[G.bigleaf, M.bigleaf, 'bigleaf']],
+  dryshrub: [[G.bush, M.bush, 'dry']],
+  snowpine: [[G.pineTrunk, M.snowBark], [G.pineLeaves, M.snowPine, 'pine']],
+  snowrock: [[G.boulder, M.snowRock]],
+  seastack: [[G.seastack, M.stone]],
+  crag: [[G.seastack, M.stone]],
+  redrock: [[G.redrock, M.stone]],
+  hoodoo: [[G.hoodoo, M.stone]],
+  bones: [[G.bones, M.stone]],
+  stonehead: [[G.stonehead, M.stone]],
 };
 
 /** pick a vegetation type for a biome given a random r in [0,1) */
-export function pickVegetation(b, r, h) {
+export function pickVegetation(b, r, h, cluster = 0) {
   // willows like the low ground by rivers and lakes
-  if ((b === 'meadow' || b === 'forest') && h < 5 && r < 0.06) return 'willow';
+  if ((b === 'meadow' || b === 'forest' || b === 'jungle') && h < 5 && r < 0.07) return 'willow';
   switch (b) {
-    case 'forest': return r < 0.14 ? 'birch' : r < 0.3 ? 'broad' : r < 0.5 ? 'pine' : r < 0.53 ? 'rock' : r < 0.6 ? 'bush' : null;
-    case 'jungle': return r < 0.55 ? 'jungle' : r < 0.68 ? 'broad' : r < 0.8 ? 'bush' : null;
+    case 'forest': return r < 0.14 ? 'birch' : r < 0.3 ? 'broad' : r < 0.5 ? 'pine' : r < 0.53 ? 'rock' : r < 0.6 ? 'bush' : r < 0.67 ? 'fern' : null;
+    case 'jungle': return r < 0.5 ? 'jungle' : r < 0.57 ? 'broad' : r < 0.67 ? 'bigleaf' : r < 0.78 ? 'fern' : r < 0.84 ? 'bush' : r < 0.86 ? 'rock' : null;
     case 'meadow': return r < 0.03 ? 'broad' : r < 0.055 ? 'birch' : r < 0.07 ? 'rock' : r < 0.16 ? 'bush' : null;
-    case 'desert': return r < 0.035 ? 'cactus' : r < 0.06 ? 'rock' : null;
+    case 'desert': return r < 0.03 ? 'cactus' : r < 0.055 ? 'redrock' : r < 0.11 ? 'dryshrub' : r < 0.117 ? 'hoodoo' : r < 0.12 ? 'bones' : null;
     case 'beach': return h > 0.8 && r < 0.07 ? 'palm' : null;
-    case 'mountain': return r < 0.13 ? 'pine' : r < 0.21 ? 'rock' : null;
-    case 'snow': return r < 0.03 ? 'pine' : r < 0.07 ? 'rock' : null;
+    case 'sea': return h > -6 && h < -0.8 && r < 0.03 * cluster ? 'seastack' : null; // pillars rising from clear shallows
+    case 'mountain': return h > 48 ? (r < 0.1 ? 'snowpine' : r < 0.16 ? 'snowrock' : null)
+      : r < 0.13 ? 'pine' : r < 0.21 ? 'rock' : r < 0.23 ? 'crag' : r < 0.26 ? 'fern' : null;
+    case 'snow': return r < 0.06 ? 'snowpine' : r < 0.1 ? 'snowrock' : null;
   }
   return null;
 }
