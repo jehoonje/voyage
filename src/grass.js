@@ -38,7 +38,7 @@ const VERT = /* glsl */ `
 attribute vec4 aOff;   // world xyz, scale (0 = hidden)
 attribute vec3 aCol;
 uniform float uTime; uniform vec3 uPlayer; uniform float uRadius;
-varying vec3 vCol;
+varying vec3 vCol; varying vec3 vWorld;
 void main(){
   float h = clamp(position.y / ${BLADE_H.toFixed(2)}, 0., 1.);
   float rnd = fract(sin(dot(aOff.xz, vec2(12.9898, 78.233))) * 43758.5453);
@@ -58,6 +58,7 @@ void main(){
   wp.xz += bend;
   wp.y -= dot(bend, bend) * .5;
   vCol = aCol * (.7 + 1.0 * h) + vec3(.08, .07, 0.) * hh + vec3(.06) * gust * hh;
+  vWorld = wp;
   vec4 mvPosition = viewMatrix * vec4(wp, 1.);
   gl_Position = projectionMatrix * mvPosition;
   vec4 worldPosition = vec4(wp, 1.);
@@ -74,9 +75,13 @@ const FRAG = /* glsl */ `
 #include <lights_pars_begin>
 #include <shadowmap_pars_fragment>
 #include <shadowmask_pars_fragment>
-varying vec3 vCol;
+varying vec3 vCol; varying vec3 vWorld;
+uniform vec3 uAmb; uniform vec3 uSun; uniform vec4 uFire;
 void main(){
-  gl_FragColor = vec4(vCol * mix(.55, 1., getShadowMask()), 1.);
+  vec3 lit = uAmb + uSun * getShadowMask();
+  float fd = distance(vWorld, uFire.xyz);
+  lit += vec3(1., .55, .25) * uFire.w / (1. + fd * fd * .3);
+  gl_FragColor = vec4(vCol * lit, 1.);
   #include <fog_fragment>
 }`;
 
@@ -93,6 +98,7 @@ export function createGrass(scene) {
 
   const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, THREE.UniformsLib.lights, {
     uPlayer: { value: new THREE.Vector3() }, uRadius: { value: RADIUS },
+    uAmb: { value: new THREE.Color(0x8c8c8c) }, uSun: { value: new THREE.Color(0x737373) }, uFire: { value: new THREE.Vector4(0, -999, 0, 0) },
   }]);
   uniforms.uTime = windTime; // shared reference, not a copy
   const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, fog: true, lights: true, side: THREE.DoubleSide });
@@ -124,6 +130,13 @@ export function createGrass(scene) {
   }
 
   return {
+    /** ambient + direct light colours, and the brightest campfire (x,y,z,strength) */
+    setLight(amb, sun, fire) {
+      uniforms.uAmb.value.copy(amb);
+      uniforms.uSun.value.copy(sun);
+      if (fire) uniforms.uFire.value.set(fire.x, fire.y + 0.5, fire.z, fire.strength);
+      else uniforms.uFire.value.w = 0;
+    },
     update(px, pz) {
       uniforms.uPlayer.value.set(px, 0, pz);
       const fx = px / S, fz = pz / S;

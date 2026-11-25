@@ -14,11 +14,11 @@ export function createCampfires(scene, fx) {
 
   const logGeo = facet(new THREE.CylinderGeometry(0.07, 0.09, 0.9, 6));
   const stoneGeo = new THREE.DodecahedronGeometry(0.14, 0);
-  const flameGeo = new THREE.ConeGeometry(0.22, 0.8, 7).translate(0, 0.4, 0);
+  const flameGeo = new THREE.ConeGeometry(0.27, 1.15, 7).translate(0, 0.55, 0);
   const ashGeo = new THREE.CircleGeometry(0.62, 18).rotateX(-Math.PI / 2);
-  const flameMats = [0xff6a1a, 0xffa030, 0xffe08a].map((c) => new THREE.MeshBasicMaterial({
-    color: c, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false,
-  }));
+  // outer flame is a normal translucent orange so it keeps its colour; inner layers add glow
+  const flameMats = [[0xff5a12, 0.85, THREE.NormalBlending], [0xff9a22, 0.55, THREE.AdditiveBlending], [0xffd870, 0.6, THREE.AdditiveBlending]]
+    .map(([c, o, b]) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, blending: b, depthWrite: false }));
   const FLAME = [[1, 0, 0], [0.75, 0.06, 0.04], [0.45, -0.03, -0.02]];
 
   // sparks
@@ -47,6 +47,8 @@ export function createCampfires(scene, fx) {
   }
 
   const fires = [];
+  let night = 0;
+  const glow = { x: 0, y: 0, z: 0, strength: 0 };
 
   function spawn(x, y, z) {
     const g = new THREE.Group();
@@ -101,6 +103,9 @@ export function createCampfires(scene, fx) {
 
   return {
     spawn,
+    glow,
+    /** 0 = day, 1 = night: at night the fire lights a wider area */
+    setNight(n) { night = n; },
     /** 0..1: logs and stones appear */
     setLogs(f, k) {
       f.logs.scale.setScalar(Math.max(k, 0.001));
@@ -145,10 +150,12 @@ export function createCampfires(scene, fx) {
       }
       if (lit) {
         light.position.set(lit.x, lit.y + 0.8, lit.z);
-        light.intensity = lit.level * flick * 12;
+        light.intensity = lit.level * flick * (7 + 6 * night);
+        light.distance = 14 + 8 * night;
+        Object.assign(glow, { x: lit.x, y: lit.y, z: lit.z, strength: lit.level * flick * (0.25 + 0.45 * night) });
         emitRate = lit.level > 0.4 ? 14 * lit.level : 0;
         if (Math.random() < emitRate * dt) emit(lit);
-      } else light.intensity = 0;
+      } else { light.intensity = 0; glow.strength = 0; }
 
       for (let i = 0; i < NS; i++) {
         if (sLife[i] <= 0) continue;

@@ -14,6 +14,7 @@ import { createFx } from './fx.js';
 import { createCampfires } from './campfire.js';
 import { createForestry } from './forestry.js';
 import { createActions } from './actions.js';
+import { createInventory } from './inventory.js';
 
 // Keep the authored (non-linear) colours looking as designed.
 THREE.ColorManagement.enabled = false;
@@ -48,7 +49,8 @@ const P = { x: 0, y: 0, z: 0, vy: 0, face: 0, grounded: true, swim: false };
 const cam = { yaw: 0.6, pitch: 0.38, dist: 9, cur: 9 };
 
 const map = createMap(progress, () => P);
-const actions = createActions({ P, fires, fx, progress });
+const inventory = createInventory(progress);
+const actions = createActions({ P, fires, fx, progress, onPickup: (t) => inventory.flash(t) });
 const input = createInput({
   onJump() { if (!actions.busy && P.grounded && !P.swim) { P.vy = 9.5; P.grounded = false; } },
   onMap: () => map.toggle(),
@@ -146,7 +148,10 @@ function step(now) {
   world.cull(camera, P.x, P.z);
   windTime.value = now / 1000;
   grass.update(P.x, P.z);
-  env.update(dt, now, P.x, P.z, P.y);
+  env.update(dt, now, P.x, P.z, P.y, camera);
+  fires.setNight(env.light.night);
+  grass.setLight(env.light.amb, env.light.sun, fires.glow.strength > 0 ? fires.glow : null);
+  updateDayNight(dt);
   fires.update(dt, now);
   fx.update(dt);
   forestry.update(now);
@@ -160,19 +165,41 @@ function begin(cont) {
   const pos = cont ? progress.load() : null;
   if (pos) { P.x = pos.x; P.z = pos.z; }
   else { [P.x, P.z] = findSpawn(); progress.reset(); }
+  let t = 0.3;
+  if (pos) { try { t = parseFloat(localStorage.getItem(TIME_KEY)) || 0.3; } catch { /* storage unavailable */ } }
+  env.time = t;
   P.y = Math.max(sample(P.x, P.z).h, SWIM_Y);
   world.update(P.x, P.z, true);
   document.getElementById('start').hidden = true;
   started = true;
 }
 
+/* day / night announcements and clock */
+const clockEl = document.getElementById('clock');
+let wasNight = null, clockT = 0;
+function updateDayNight(dt) {
+  if ((clockT -= dt) <= 0) { clockT = 0.5; clockEl.textContent = env.clock(); }
+  const isNight = wasNight ? env.light.night > 0.4 : env.light.night > 0.6; // hysteresis
+  if (wasNight !== null && isNight !== wasNight) {
+    if (isNight) progress.toast('밤', '어둠이 내려앉았어요', '모닥불을 피우면 주변이 밝아져요');
+    else progress.toast('아침', '날이 밝았어요', '다시 멀리까지 보여요');
+  }
+  wasNight = isNight;
+}
+const TIME_KEY = 'mjdr-time';
+
 const contBtn = document.getElementById('goCont');
 contBtn.hidden = !progress.hasSave();
 document.getElementById('goNew').addEventListener('click', () => begin(false));
 contBtn.addEventListener('click', () => begin(true));
 
-setInterval(() => started && progress.save(P.x, P.z), 5000);
-addEventListener('pagehide', () => started && progress.save(P.x, P.z));
+function saveAll() {
+  if (!started) return;
+  progress.save(P.x, P.z);
+  try { localStorage.setItem(TIME_KEY, String(env.time)); } catch { /* storage unavailable */ }
+}
+setInterval(saveAll, 5000);
+addEventListener('pagehide', saveAll);
 
 // scenery behind the start card
 {

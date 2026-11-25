@@ -8,8 +8,9 @@ const STAND = { drop: 0, back: 0, lean: 0, twist: 0, legL: 0, legR: 0, armLX: 0,
 const KNEEL = { ...STAND, drop: -0.36, lean: 0.45, legL: -1.3, legR: 1.0, armLX: -1.0, armRX: -1.0 };
 const SIT = { ...STAND, drop: -0.62, back: -0.35, lean: -0.08, legL: -1.45, legR: -1.4, armLX: -0.95, armRX: -0.95, armLZ: 0.12, armRZ: -0.12 };
 const FIRE_DIST = 1.35, SWING = 0.85, SWINGS = 3;
+export const CAMP_COST = 6;
 
-export function createActions({ P, fires, fx, progress }) {
+export function createActions({ P, fires, fx, progress, onPickup }) {
   let kind = null, phase = '', t = 0, fire = null, tree = null, swings = 0, hit = false, wobT = 9;
   let dir = [0, 1];
   const pose = { ...STAND, axe: false };
@@ -20,6 +21,12 @@ export function createActions({ P, fires, fx, progress }) {
     if (P.swim || !P.grounded) { progress.toast('야영', '여기서는 불을 피울 수 없어요', '땅 위에서 시도하세요'); return false; }
     const x = P.x + Math.sin(P.face) * FIRE_DIST, z = P.z + Math.cos(P.face) * FIRE_DIST, h = sample(x, z).h;
     if (h < 0.2) { progress.toast('야영', '여기서는 불을 피울 수 없어요', '물가에서 조금 떨어지세요'); return false; }
+    const have = progress.count('wood');
+    if (!progress.takeItem('wood', CAMP_COST)) {
+      progress.toast('야영', '나무 조각이 부족해요', `${have} / ${CAMP_COST}개 · 나무를 캐서 모으세요`);
+      return false;
+    }
+    onPickup && onPickup(`나무 조각 −${CAMP_COST}`);
     fire = fires.spawn(x, h, z);
     kind = 'camp'; phase = 'place'; t = 0;
     return true;
@@ -98,7 +105,8 @@ export function createActions({ P, fires, fx, progress }) {
         poseTree(tree, 0, 0, 1, 0);
         tree.hidden = true; tree.busy = false;
         felled.set(tree.key, now + RESPAWN_MS);
-        progress.addWood(1);
+        progress.addItem('wood', 1);
+        onPickup && onPickup('나무 조각 +1');
         progress.gain(5);
         kind = null; tree = null;
         return null;
