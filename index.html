@@ -69,9 +69,39 @@
         <li>Drag on the right · look around</li>
         <li>Keyboard: WASD · Shift run · Space jump · E interact / fish · C camp · I bag · M map</li>
       </ul>
-      <button class="go" id="goNew">Start exploring</button>
-      <button class="go" id="goCont" hidden>Continue</button>
-      <button class="link" id="goEdit" hidden>Restyle my character and continue</button>
+      <p id="auLoading" class="au-msg" role="status">Loading…</p>
+
+      <!-- not signed in: Google, Kakao or email, or a one-time guest run -->
+      <div id="authBox" hidden>
+        <button class="sso google" id="auGoogle" type="button">Continue with Google</button>
+        <button class="sso kakao" id="auKakao" type="button">Continue with Kakao</button>
+        <div class="or"><span>or with email</span></div>
+        <form id="auForm" novalidate>
+          <input id="auEmail" type="email" autocomplete="email" inputmode="email" placeholder="Email" aria-label="Email" required>
+          <input id="auPass" type="password" autocomplete="current-password" placeholder="Password (at least 6 characters)" aria-label="Password" minlength="6" required>
+          <div class="au-row"><button class="go" id="auIn" type="submit">Sign in</button><button class="go ghost" id="auUp" type="button">Create account</button></div>
+        </form>
+        <button class="link" id="auForgot" type="button">Forgot password?</button>
+        <p class="au-msg" id="auMsg" role="status" aria-live="polite"></p>
+        <div class="or"><span>or</span></div>
+        <button class="go ghost" id="goGuest" type="button">Play as guest</button>
+        <p class="au-note">A one-time session: your progress is gone when you close or reload the page.</p>
+      </div>
+
+      <!-- arrived from a password-reset email -->
+      <form id="auReset" hidden novalidate>
+        <input id="auNewPass" type="password" autocomplete="new-password" placeholder="New password (at least 6 characters)" aria-label="New password" minlength="6" required>
+        <button class="go" type="submit">Set new password</button>
+        <p class="au-msg" id="auResetMsg" role="status" aria-live="polite"></p>
+      </form>
+
+      <!-- signed in (or guest): play -->
+      <div id="playBox" hidden>
+        <p class="who"><span id="whoName"></span> · <button class="inline" id="auOut" type="button">Sign out</button></p>
+        <button class="go" id="goNew">Start exploring</button>
+        <button class="go" id="goCont" hidden>Continue</button>
+        <button class="link" id="goEdit" hidden>Restyle my character and continue</button>
+      </div>
     </div>
   </div>
 

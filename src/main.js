@@ -11,6 +11,8 @@ import { preventPageZoom } from './nozoom.js';
 preventPageZoom();
 import { createInput } from './input.js';
 import { createProgress, paceFor, FISH_LVL } from './progress.js';
+import { store } from './store.js';
+import { createAccount } from './account.js';
 import { createMap } from './map.js';
 import { createGrass } from './grass.js';
 import { windTime, rimLight } from './wind.js';
@@ -89,8 +91,7 @@ weather.onChange((st) => {
   if (msg) progress.toast('Weather', msg[0], msg[1]);
 });
 const hero = createCharacter(scene);
-const savedSpec = loadSpec();
-hero.apply(savedSpec || DEFAULT_SPEC).catch(() => { /* retried when the creator opens */ });
+hero.apply(DEFAULT_SPEC).catch(() => { /* retried when the creator opens */ }); // the saved look arrives after sign-in
 const progress = createProgress();
 const grass = createGrass(scene);
 const fx = createFx(scene);
@@ -262,7 +263,7 @@ function begin(cont) {
   else { [P.x, P.z] = findSpawn(); progress.reset(); }
   if (!cont && DEBUG.has('at')) { const [x, z] = DEBUG.get('at').split(',').map(Number); if (isFinite(x) && isFinite(z)) { P.x = x; P.z = z; } }
   let t = 0.3;
-  if (pos) { try { t = parseFloat(localStorage.getItem(TIME_KEY)) || 0.3; } catch { /* storage unavailable */ } }
+  if (pos) t = parseFloat(store.get(TIME_KEY)) || 0.3;
   if (DEBUG.has('t')) t = parseFloat(DEBUG.get('t')) || t;
   if (DEBUG.has('cam')) { const [pt, ds, yw] = DEBUG.get('cam').split(',').map(Number); if (isFinite(pt)) cam.pitch = pt; if (isFinite(ds)) cam.dist = ds; if (isFinite(yw)) cam.yaw = yw; }
   env.time = t;
@@ -289,7 +290,15 @@ function updateDayNight(dt) {
 const TIME_KEY = 'mjdr-time';
 
 const contBtn = document.getElementById('goCont'), editBtn = document.getElementById('goEdit'), startEl = document.getElementById('start');
-contBtn.hidden = editBtn.hidden = !progress.hasSave();
+// sign in (or play as a guest) first; then the buttons reflect that player's save
+createAccount({
+  onReady({ imported }) {
+    contBtn.hidden = editBtn.hidden = !progress.hasSave();
+    const spec = loadSpec();
+    if (spec) hero.apply(spec).catch(() => { /* retried when the creator opens */ });
+    if (imported) progress.toast('Welcome back', 'Your progress is now saved to your account', 'Play on any device');
+  },
+});
 let pendingCont = false;
 const creator = createCreator({ renderer, hero, onDone: () => { resize(); begin(pendingCont); } });
 function openCreator(cont) {
@@ -312,10 +321,11 @@ contBtn.addEventListener('click', async () => {
 function saveAll() {
   if (!started) return;
   progress.save(P.x, P.z);
-  try { localStorage.setItem(TIME_KEY, String(env.time)); } catch { /* storage unavailable */ }
+  store.set(TIME_KEY, env.time);
 }
 setInterval(saveAll, 5000);
-addEventListener('pagehide', saveAll);
+addEventListener('pagehide', () => { saveAll(); store.flush(); });
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { saveAll(); store.flush(); } });
 
 // scenery behind the start card
 {

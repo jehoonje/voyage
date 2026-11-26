@@ -170,3 +170,30 @@ body.creating .hud{display:none!important}
 #ctxBtn.bite{background:linear-gradient(#ffcf6a,#e89a2c);color:#2a1a08;animation:bitePulse .45s ease-in-out infinite alternate}
 @keyframes bitePulse{from{transform:translateX(-50%) scale(1)}to{transform:translateX(-50%) scale(1.12)}}
 #ctxBtn[data-mode="fishLocked"]{opacity:.6;filter:grayscale(.7)}
+
+/* start card: sign in (Google, Kakao, email) or play as a guest */
+#start{overflow-y:auto;padding-block:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-bottom,0px))}
+.sso{display:block;width:100%;height:48px;border-radius:12px;font-family:var(--ui);font-size:15px;font-weight:600;cursor:pointer;border:0}
+.sso + .sso{margin-top:8px}
+.sso.google{background:#fff;color:#1f1f1f}
+.sso.kakao{background:#fee500;color:rgba(0,0,0,.85)}
+.sso:disabled,.go:disabled{opacity:.45;cursor:default}
+.or{display:flex;align-items:center;gap:10px;margin:14px 0;font-size:12px;color:var(--ink-dim)}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--panel-line)}
+#auForm input,#auReset input{display:block;width:100%;box-sizing:border-box;height:46px;margin:0 0 8px;padding:0 14px;border-radius:12px;
+  border:1px solid var(--panel-line);background:rgba(10,14,16,.55);color:var(--ink);font-family:var(--ui);font-size:16px;
+  -webkit-user-select:text;user-select:text}
+#auForm input:focus,#auReset input:focus{outline:2px solid var(--amber);outline-offset:1px}
+.au-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.au-row .go{height:46px;font-size:16px;margin:0}
+.go.ghost{background:transparent;border:1px solid var(--panel-line);color:var(--ink)}
+#auForgot{margin-top:4px}
+.au-msg{min-height:1.2em;margin:6px 0 0!important;font-size:13px!important;color:var(--amber)!important}
+.au-msg:empty{min-height:0}
+.au-note{font-size:12px!important;margin:6px 0 0!important}
+.who{font-size:13px!important;margin:0 0 12px!important;color:var(--ink-dim)}
+.who span{color:var(--ink)}
+.inline{background:none;border:0;padding:0;color:var(--ink-dim);font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+/* while the start card is up the game controls stay out of the way; the controls list waits for the play step */
+body:has(#start:not([hidden])) .hud:not(#toast){visibility:hidden}
+.card:has(#playBox[hidden]) ul{display:none}

@@ -1,6 +1,7 @@
 // Exploration progress: revealed cells, XP / level, regions, biomes, HUD, toasts, save.
 import { hash2 } from './noise.js';
 import { sample, biome, BIOME_NAME } from './world.js';
+import { store } from './store.js';
 
 export const CELL = 16;
 const REVEAL = 3, REGION = 350, SAVE_KEY = 'mjdr-save';
@@ -61,7 +62,7 @@ export function createProgress() {
   }
 
   function readSave() {
-    try { return JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { return null; }
+    return store.get(SAVE_KEY);
   }
 
   return {
@@ -97,11 +98,9 @@ export function createProgress() {
     save(px, pz) {
       if (!dirty) return;
       dirty = false;
-      try {
-        localStorage.setItem(SAVE_KEY, JSON.stringify({
-          xp: st.xp, lvl: st.lvl, items: st.items, cells: [...st.cells], regions: [...st.regions], biomes: [...st.biomes], x: px, z: pz,
-        }));
-      } catch { /* storage unavailable */ }
+      store.set(SAVE_KEY, {
+        xp: st.xp, lvl: st.lvl, items: st.items, cells: [...st.cells], regions: [...st.regions], biomes: [...st.biomes], x: px, z: pz,
+      });
     },
     /** reveal cells around the player, award XP, announce regions */
     explore(px, pz) {

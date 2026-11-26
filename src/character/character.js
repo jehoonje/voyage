@@ -5,6 +5,7 @@ import { EYES, HAIR, HATS, TOPS, BOTTOMS, SHOES, ACCESSORIES, DEFAULT_SPEC, HEAD
 import { BONES, BONE } from './rig.js';
 import MOCAP from './mocap.js';
 import { SWIM_Y } from '../physics.js';
+import { store } from '../store.js';
 
 export const SCALE = 1.35; // model metres → world metres (about 1.7 m with hair)
 export const POSE_KEYS = ['drop', 'back', 'lean', 'twist', 'legL', 'legR', 'kneeL', 'kneeR',
@@ -41,10 +42,10 @@ export function sanitize(s) {
   return o;
 }
 export function loadSpec() {
-  try { const t = localStorage.getItem(KEY); return t ? sanitize(JSON.parse(t)) : null; } catch { return null; }
+  const t = store.get(KEY); return t ? sanitize(t) : null;
 }
 export function saveSpec(s) {
-  try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* storage unavailable */ }
+  store.set(KEY, s);
 }
 
 /* ================= textures & materials ================= */
