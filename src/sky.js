@@ -5,6 +5,18 @@ import * as THREE from 'three';
 import { sstep, mix } from './noise.js';
 import { ATMOS } from './atmos.js';
 
+// Shadows fade out toward the edge of the shadow box instead of stopping at a hard line
+// (zoomed out, the box edge used to show as a seam where tree shadows suddenly ended).
+{
+  const ret = 'return mix( 1.0, shadow, shadowIntensity );';
+  const src = THREE.ShaderChunk.shadowmap_pars_fragment;
+  const at = src.indexOf(ret); // the first one is the directional / spot getShadow
+  if (at >= 0) THREE.ShaderChunk.shadowmap_pars_fragment = src.slice(0, at) +
+    `vec2 edgeD = abs( shadowCoord.xy * 2.0 - 1.0 );
+		shadow = mix( shadow, 1.0, smoothstep( 0.78, 0.98, max( edgeD.x, edgeD.y ) ) );
+		` + ret + src.slice(at + ret.length);
+}
+
 export const DAY_LENGTH = 960; // real seconds per in-game day
 
 const col = (h) => new THREE.Color(h);
@@ -154,15 +166,20 @@ export function createEnvironment(scene, startTime = 0.3) {
   // Shadow box follows the player; size trades sharpness for coverage.
   const touch = matchMedia('(pointer: coarse)').matches;
   const MAP = touch ? 1024 : 2048, EXT = touch ? 40 : 55;
+  // the light sits this far back along its ray: far enough that ridges up-sun (peaks reach ~125 m) aren't clipped
+  const SUN_BACK = 300, SHADOW_STEP = Math.cos(THREE.MathUtils.degToRad(0.15));
   sun.castShadow = true;
   sun.shadow.mapSize.set(MAP, MAP);
-  Object.assign(sun.shadow.camera, { left: -EXT, right: EXT, top: EXT, bottom: -EXT, near: 1, far: 320 });
+  Object.assign(sun.shadow.camera, { left: -EXT, right: EXT, top: EXT, bottom: -EXT, near: 1, far: SUN_BACK * 2 + 40 });
   sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.35;
   const texel = (EXT * 2) / MAP, focus = new THREE.Vector3();
   const dir = new THREE.Vector3(), lx = new THREE.Vector3(), ly = new THREE.Vector3(), lz = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0), discDir = new THREE.Vector3();
+  // The shadow map follows the sun in small steps, not every frame: a light that turns a hair each frame
+  // re-rasterizes every shadow edge, which made edges crawl and flicker (and undid the texel snapping).
+  const shadowDir = new THREE.Vector3(0, 1, 0), camFwd = new THREE.Vector3();
 
   // sky dome
   const skyU = {
@@ -285,9 +302,12 @@ export function createEnvironment(scene, startTime = 0.3) {
     }
     discDir.copy(dir);
     if (discDir.y < 0.02) { discDir.y = 0.02; discDir.normalize(); }
-    lz.copy(dir).negate();
-    lx.crossVectors(UP, lz).normalize();
-    ly.crossVectors(lz, lx);
+    if (shadowDir.dot(dir) < SHADOW_STEP || Math.sign(shadowDir.y) !== Math.sign(dir.y)) {
+      shadowDir.copy(dir);
+      lz.copy(dir).negate();
+      lx.crossVectors(UP, lz).normalize();
+      ly.crossVectors(lz, lx);
+    }
 
     skyU.uBandK.value = dusk * 0.9;
     skyU.uCover.value = cover;
@@ -330,11 +350,17 @@ export function createEnvironment(scene, startTime = 0.3) {
       starU.uPx.value = Math.min(devicePixelRatio, 1.75);
       apply(camera, bio, wx);
       waterU.uTime.value = now / 1000;
+      // centre the shadow box a little ahead of the player, where the camera is looking
       focus.set(px, py, pz);
+      if (camera) {
+        camera.getWorldDirection(camFwd); camFwd.y = 0;
+        if (camFwd.lengthSq() > 1e-4) focus.addScaledVector(camFwd.normalize(), EXT * 0.4);
+      }
+      // snap to whole shadow-map texels so the box sliding with the player doesn't make edges swim
       const u = focus.dot(lx), v = focus.dot(ly);
       focus.addScaledVector(lx, Math.round(u / texel) * texel - u).addScaledVector(ly, Math.round(v / texel) * texel - v);
       sun.target.position.copy(focus);
-      sun.position.copy(focus).addScaledVector(dir, 150);
+      sun.position.copy(focus).addScaledVector(lz, -SUN_BACK);
       water.position.set(Math.round(px / 50) * 50, Math.sin(now * 0.001) * 0.06, Math.round(pz / 50) * 50);
       ATMOS.wet.value = wx ? wx.wet : 0;
       ATMOS.snow.value = wx ? wx.snowCover : 0;

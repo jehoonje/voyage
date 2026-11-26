@@ -169,3 +169,4 @@ body.creating .hud{display:none!important}
 /* a bite on the line: the action button glows and pulses */
 #ctxBtn.bite{background:linear-gradient(#ffcf6a,#e89a2c);color:#2a1a08;animation:bitePulse .45s ease-in-out infinite alternate}
 @keyframes bitePulse{from{transform:translateX(-50%) scale(1)}to{transform:translateX(-50%) scale(1.12)}}
+#ctxBtn[data-mode="fishLocked"]{opacity:.6;filter:grayscale(.7)}

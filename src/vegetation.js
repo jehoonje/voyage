@@ -68,6 +68,18 @@ function foliage(map, opts = {}) {
   // alpha-to-coverage keeps distant (mipmapped) leaves solid instead of fading away
   const mat = vegShader(Lm(0xffffff, { map, alphaTest: 0.3, alphaToCoverage: true, side: THREE.DoubleSide }), { flutter: true, rim: true, ...opts });
   mat.userData.depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.3, side: THREE.DoubleSide });
+  // The leaf textures are black wherever they're transparent, so smaller mip levels blend that black into
+  // the leaves: thin fronds seen from afar or from above turned into dark blots. Dividing by the averaged
+  // alpha takes the black back out (the transparent texels are zero, so it's an alpha-weighted average).
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev(sh, r);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#ifdef USE_MAP
+  vec4 sampledDiffuseColor = texture2D( map, vMapUv );
+  sampledDiffuseColor.rgb = min( sampledDiffuseColor.rgb / max( sampledDiffuseColor.a, .08 ), 1. );
+  diffuseColor *= sampledDiffuseColor;
+#endif`);
+  };
   return mat;
 }
 

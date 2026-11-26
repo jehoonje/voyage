@@ -10,7 +10,7 @@ import { createCreator } from './creator.js';
 import { preventPageZoom } from './nozoom.js';
 preventPageZoom();
 import { createInput } from './input.js';
-import { createProgress } from './progress.js';
+import { createProgress, paceFor, FISH_LVL } from './progress.js';
 import { createMap } from './map.js';
 import { createGrass } from './grass.js';
 import { windTime, rimLight } from './wind.js';
@@ -144,7 +144,10 @@ function refreshContext() {
   else if (fishing.active) { mode = 'reel'; label = fishing.state === 'bite' ? 'Reel in!' : 'Reel in'; }
   else if (!actions.busy && !P.swim) {
     nearTree = world.nearestTree(P.x, P.z, 2.8);
-    if (fishing.canFish()) { mode = 'fish'; label = 'Fish'; } // facing open water from the bank (turn away to chop)
+    if (fishing.canFish()) { // facing open water from the bank (turn away to chop)
+      if (progress.state.lvl >= FISH_LVL) { mode = 'fish'; label = 'Fish'; }
+      else { mode = 'fishLocked'; label = `Fish · Lv.${FISH_LVL}`; }
+    }
     else if (nearTree) { mode = 'chop'; label = 'Chop tree'; }
   }
   const lbl = mode + label;
@@ -158,6 +161,7 @@ function doContext() {
   if (mode === 'douse') actions.endCamp();
   else if (mode === 'chop' && nearTree) actions.startChop(nearTree);
   else if (mode === 'fish') fishing.start();
+  else if (mode === 'fishLocked') progress.toast('Fishing', `Unlocks at Lv.${FISH_LVL}`, `You are Lv.${progress.state.lvl} · explore to level up`);
   else if (mode === 'reel') fishing.reel();
   refreshContext();
 }
@@ -197,6 +201,7 @@ function step(now) {
   }
   if (actions.busy) { P.vx *= 0.8; P.vz *= 0.8; }
   const wasSwim = P.swim;
+  P.pace = paceFor(progress.state.lvl);
   const ph = physics.step(P, dt, wx, wz, inp.run && !actions.busy);
   if (wasSwim && !P.swim && P.grounded && P.y - SWIM_Y > 0.35) { // reached a bank: haul out
     hero.edge(P.y - SWIM_Y); P.vx *= 0.2; P.vz *= 0.2;

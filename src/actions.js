@@ -116,8 +116,9 @@ export function createActions({ P, fires, fx, progress, onPickup }) {
         poseTree(tree, 0, 0, 1, 0);
         tree.hidden = true; tree.busy = false;
         felled.set(tree.key, now + RESPAWN_MS);
-        progress.addItem('wood', 1);
-        onPickup && onPickup('Wood +1');
+        const got = 1 + Math.floor(Math.random() * 3); // 1–3 pieces per tree
+        progress.addItem('wood', got);
+        onPickup && onPickup(`Wood +${got}`);
         progress.gain(5);
         kind = null; tree = null;
         return null;

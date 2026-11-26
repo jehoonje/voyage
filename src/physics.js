@@ -55,7 +55,7 @@ export function createPhysics(world, fires) {
       const grade = Math.hypot(gx, gz);
 
       // target velocity
-      let top = run ? RUN : WALK;
+      let top = (run ? RUN : WALK) * (P.pace || 1); // quicker with each level (see progress.paceFor)
       if (P.swim) top *= 0.55;
       let tx = wx * top, tz = wz * top;
       const tl = Math.hypot(tx, tz);

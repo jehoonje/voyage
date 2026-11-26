@@ -5,6 +5,9 @@ import { sample, biome, BIOME_NAME } from './world.js';
 export const CELL = 16;
 const REVEAL = 3, REGION = 350, SAVE_KEY = 'mjdr-save';
 const need = (l) => 60 + l * 45;
+/** each level up to 6 makes you a little quicker on your feet: ×1.00 at Lv.1 … ×1.30 at Lv.6 */
+export const PACE_MAX_LVL = 6, FISH_LVL = 3;
+export const paceFor = (lvl) => 1 + 0.06 * (Math.min(lvl, PACE_MAX_LVL) - 1);
 
 const ADJ = ['Whispering', 'Forgotten', 'Golden', 'Misty', 'Silent', 'Crimson', 'Starlit', 'Windswept', 'Ancient', 'Azure', 'Silver', 'Shadow', 'Dawn', 'Echoing'];
 const NOUN = {
@@ -50,7 +53,9 @@ export function createProgress() {
     st.xp += n; dirty = true;
     while (st.xp >= need(st.lvl)) {
       st.xp -= need(st.lvl); st.lvl++;
-      toast('Level up', 'Me Lv.' + st.lvl, 'Farther places are calling');
+      const note = st.lvl === FISH_LVL ? 'Fishing unlocked · a little quicker on your feet'
+        : st.lvl <= PACE_MAX_LVL ? 'A little quicker on your feet' : 'Farther places are calling';
+      toast('Level up', 'Me Lv.' + st.lvl, note);
     }
     hud();
   }

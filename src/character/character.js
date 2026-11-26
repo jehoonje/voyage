@@ -470,11 +470,13 @@ export function createCharacter(scene) {
         rate = 9;
       } else {
         // walk ↔ run blend follows speed, eased so starts and stops don't snap
-        const mw = sat(speed / 1.6), rw = sat((speed - WALK_REF * 1.05) / (RUN_REF - WALK_REF * 1.05));
+        // pace: the level speed bonus, so a quicker walk is still read as a walk
+        const pc = p.pace || 1, wRef = WALK_REF * pc, rRef = RUN_REF * pc;
+        const mw = sat(speed / 1.6), rw = sat((speed - wRef * 1.05) / (rRef - wRef * 1.05));
         moveW += (mw - moveW) * Math.min(1, dt * 7);
         runW += (rw - runW) * Math.min(1, dt * 5);
         // stride frequency rises with speed (cycles per second), phase advances with distance travelled
-        const freq = p.swim ? 0.7 : 0.55 + 0.13 * Math.min(speed, RUN_REF);
+        const freq = p.swim ? 0.7 : 0.55 + 0.13 * Math.min(speed / pc, RUN_REF) * Math.sqrt(pc);
         phase += dt * freq * Math.PI * 2 * (speed > 0.05 ? 1 : 0);
         const w = moveW, r = runW, f = phase;
         const sL = Math.sin(f), sR = -sL, cL = Math.cos(f);
@@ -567,7 +569,8 @@ export function createCharacter(scene) {
       if (speed > 0.02) {
         // playback rate keeps the planted foot under the body up to a cartoon cadence cap
         const W = MOCAP.walk, R = MOCAP.run, v = speed / SCALE;
-        const rw = Math.min(MAX_RATE.walk, Math.max(0.5, v / W.speed)), rr = Math.min(MAX_RATE.run, Math.max(0.6, v / R.speed));
+        const cap = Math.pow(p.pace || 1, 0.6); // a quicker pace (levels) gets a slightly quicker step
+        const rw = Math.min(MAX_RATE.walk * cap, Math.max(0.5, v / W.speed)), rr = Math.min(MAX_RATE.run * cap, Math.max(0.6, v / R.speed));
         mocapU += dt * ((1 - runW) * rw / W.duration + runW * rr / R.duration);
       }
       if (mocapW > 0.001) {
