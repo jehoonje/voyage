@@ -65,26 +65,44 @@ function leafCluster({ size = 256, count = 260, len = [13, 20], width = 0.38, hu
 }
 
 /** pine branch seen from above: twig from the trunk (left) to the tip (right), needles fanning out */
-function pineBranch(id = 3) {
+/**
+ * Fir spray (as on Korean fir / Abies): a flat, fern-like spray — a central twig with side
+ * branchlets angled forward, every twig thick with short needles; pale new growth at the tips.
+ * Twig base at u = 0 (left), centre line at v = 0.5.
+ */
+function firSpray(id = 31) {
   seed(id);
   const [c, ctx] = canvas(256, 128);
   ctx.lineCap = 'round';
-  const twig = (x0, y0, x1, y1, n, nl) => {
-    ctx.strokeStyle = hsl(25, 30, 20); ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
-    for (let i = 0; i < n; i++) {
-      const t = i / n, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t, side = i % 2 ? 1 : -1;
-      const ln = nl * (1 - t * 0.5) * between(0.7, 1.1), a = Math.atan2(y1 - y0, x1 - x0) + side * between(0.7, 1.1);
-      ctx.strokeStyle = hsl(between(130, 155), between(25, 40), between(14, 30));
-      ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * ln, y + Math.sin(a) * ln); ctx.stroke();
+  const M = 64; // centre line
+  // body of the spray: an overlapping mass of branchlets so the card reads solid at a distance
+  const twig = (x0, y0, x1, y1, len, step, w) => {
+    const L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(3, Math.floor(L / step)), a0 = Math.atan2(y1 - y0, x1 - x0);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+      const young = Math.max(0, (t - 0.55) / 0.45); // pale new growth toward the tip
+      for (const side of [-1, 1]) {
+        const a = a0 + side * between(0.9, 1.25), ln = len * (1 - t * 0.45) * between(0.8, 1.1);
+        ctx.strokeStyle = hsl(between(132, 150) - young * 38, between(28, 40) + young * 18, between(14, 24) + young * 20);
+        ctx.lineWidth = w * between(0.85, 1.15);
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * ln, y + Math.sin(a) * ln); ctx.stroke();
+      }
     }
+    ctx.strokeStyle = hsl(30, 25, 22); ctx.lineWidth = w * 0.9;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
   };
-  twig(0, 64, 250, 64, 120, 26);
-  for (let k = 0; k < 9; k++) {
-    const x = 25 + k * 24, side = k % 2 ? 1 : -1;
-    twig(x, 64, x + 40, 64 + side * between(28, 44), 30, 14);
+  // a soft dark core under the needles keeps the silhouette dense after mipmapping
+  ctx.fillStyle = hsl(140, 36, 13, 0.9);
+  ctx.beginPath(); ctx.moveTo(0, M);
+  for (let x = 0; x <= 236; x += 8) ctx.lineTo(x, M - (30 - 24 * (x / 236)) * between(0.55, 1)); // ragged, never a smooth leaf edge
+  for (let x = 236; x >= 0; x -= 8) ctx.lineTo(x, M + (30 - 24 * (x / 236)) * between(0.55, 1));
+  ctx.fill();
+  for (let k = 0; k < 12; k++) {
+    const x = 6 + k * 19, t = x / 256, side = k % 2 ? 1 : -1;
+    const len = (52 - 34 * t) * between(0.85, 1.1), a = side * between(0.6, 0.8);
+    twig(x, M, x + Math.cos(a) * len, M + Math.sin(a) * len, 9 * (1 - t * 0.3), 2.6, 2.4);
   }
+  twig(0, M, 252, M + between(-3, 3), 11, 2.4, 2.8);
   return toTexture(c);
 }
 
@@ -260,7 +278,7 @@ export function natureTextures() {
     birch: leafCluster({ id: 2, count: 400, len: [8, 13], width: 0.42, hue: [68, 92], sat: [38, 55], light: [28, 50], twig: 1.4 }),
     jungle: leafCluster({ id: 4, count: 85, len: [40, 62], width: 0.5, hue: [95, 125], sat: [40, 55], light: [16, 34], twig: 3 }),
     bush: leafCluster({ id: 8, count: 300, len: [10, 16], width: 0.45, hue: [85, 115], sat: [30, 48], light: [18, 36] }),
-    pine: pineBranch(),
+    pine: firSpray(),
     willow: willowStrands(),
     palm: palmFrond(),
     fern: fernFrond(),

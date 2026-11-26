@@ -39,7 +39,7 @@ export function createProgress() {
 
   function hud() {
     const nd = need(st.lvl);
-    $('lvl').textContent = '탐험가 Lv.' + st.lvl;
+    $('lvl').textContent = '나 Lv.' + st.lvl;
     $('xpbar').style.width = (st.xp / nd) * 100 + '%';
     $('xptxt').textContent = st.xp + ' / ' + nd + ' XP';
     $('area').textContent = areaKm2().toFixed(2) + ' km²';
@@ -50,7 +50,7 @@ export function createProgress() {
     st.xp += n; dirty = true;
     while (st.xp >= need(st.lvl)) {
       st.xp -= need(st.lvl); st.lvl++;
-      toast('레벨 업', '탐험가 Lv.' + st.lvl, '더 먼 곳이 당신을 부릅니다');
+      toast('레벨 업', '나 Lv.' + st.lvl, '더 먼 곳이 당신을 부릅니다');
     }
     hud();
   }

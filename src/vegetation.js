@@ -124,18 +124,24 @@ export const TYPES = {
 };
 
 /** pick a vegetation type for a biome given a random r in [0,1) */
-export function pickVegetation(b, r, h, cluster = 0) {
+/**
+ * stand (-1..1, slowly varying): forests grow in stands of one kind — fir woods, broadleaf
+ * woods, birch groves — with only a little of anything else mixed in. Jungles stay a tangle.
+ */
+export function pickVegetation(b, r, h, stand = 0) {
   // willows like the low ground by rivers and lakes
-  if ((b === 'meadow' || b === 'forest' || b === 'jungle') && h < 5 && r < 0.07) return 'willow';
+  if ((b === 'meadow' || b === 'forest' || b === 'jungle') && h < 5 && r < 0.05) return 'willow';
   switch (b) {
-    case 'forest': return r < 0.14 ? 'birch' : r < 0.3 ? 'broad' : r < 0.5 ? 'pine' : r < 0.53 ? 'rock' : r < 0.6 ? 'bush' : r < 0.67 ? 'fern' : null;
+    case 'forest':
+      if (stand < -0.18) return r < 0.3 ? 'pine' : r < 0.315 ? 'broad' : r < 0.33 ? 'rock' : r < 0.43 ? 'fern' : null; // fir wood (wide cones: fewer trunks)
+      if (stand > 0.28) return r < 0.34 ? 'birch' : r < 0.37 ? 'pine' : r < 0.45 ? 'bush' : r < 0.5 ? 'fern' : null; // birch grove
+      return r < 0.34 ? 'broad' : r < 0.37 ? 'birch' : r < 0.39 ? 'rock' : r < 0.47 ? 'bush' : r < 0.53 ? 'fern' : null; // broadleaf wood
     case 'jungle': return r < 0.5 ? 'jungle' : r < 0.57 ? 'broad' : r < 0.67 ? 'bigleaf' : r < 0.78 ? 'fern' : r < 0.84 ? 'bush' : r < 0.86 ? 'rock' : null;
     case 'meadow': return r < 0.03 ? 'broad' : r < 0.055 ? 'birch' : r < 0.07 ? 'rock' : r < 0.16 ? 'bush' : null;
-    case 'desert': return r < 0.03 ? 'cactus' : r < 0.055 ? 'redrock' : r < 0.11 ? 'dryshrub' : r < 0.117 ? 'hoodoo' : r < 0.12 ? 'bones' : null;
+    case 'desert': return r < 0.03 ? 'cactus' : r < 0.055 ? 'redrock' : r < 0.11 ? 'dryshrub' : r < 0.113 ? 'bones' : null;
     case 'beach': return h > 0.8 && r < 0.07 ? 'palm' : null;
-    case 'sea': return h > -6 && h < -0.8 && r < 0.03 * cluster ? 'seastack' : null; // pillars rising from clear shallows
     case 'mountain': return h > 48 ? (r < 0.1 ? 'snowpine' : r < 0.16 ? 'snowrock' : null)
-      : r < 0.13 ? 'pine' : r < 0.21 ? 'rock' : r < 0.23 ? 'crag' : r < 0.26 ? 'fern' : null;
+      : r < 0.13 ? 'pine' : r < 0.21 ? 'rock' : r < 0.24 ? 'fern' : null;
     case 'snow': return r < 0.06 ? 'snowpine' : r < 0.1 ? 'snowrock' : null;
   }
   return null;

@@ -11,13 +11,13 @@ const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)
 // phones stream a smaller ring of chunks (dense foliage is expensive)
 const SEG = 32, RADIUS = touch ? 2 : 3, STEP = CHUNK / SEG, VEG_GRID = 4;
 /** trunk radius per type, before instance scale */
-const TRUNK_R = { pine: 0.3, snowpine: 0.3, broad: 0.36, jungle: 0.5, palm: 0.26, cactus: 0.42, birch: 0.17, willow: 0.5 };
+const TRUNK_R = { pine: 0.22, snowpine: 0.22, broad: 0.36, jungle: 0.5, palm: 0.26, cactus: 0.42, birch: 0.17, willow: 0.5 };
 /** solid props: [collider radius, scale range [min, span]] before instance scale */
 const PROPS = { seastack: [1.5, 0.8, 0.8], crag: [1.3, 0.5, 0.5], hoodoo: [1.2, 0.6, 0.7], stonehead: [2.4, 0.95, 0.25], redrock: [0, 0.6, 1.6], snowrock: [0, 0.6, 1.6], rock: [0, 0.6, 1.6] };
 /** [centre height, radius] spheres approximating each tree type, before instance scale */
 const OCCLUDERS = {
-  pine: [[1.2, 0.45], [3.0, 1.8], [4.8, 1.3], [6.2, 0.8]],
-  snowpine: [[1.2, 0.45], [3.0, 1.8], [4.8, 1.3], [6.2, 0.8]],
+  pine: [[1.6, 2.1], [3.8, 1.6], [5.9, 1.1], [7.9, 0.6]],
+  snowpine: [[1.6, 2.1], [3.8, 1.6], [5.9, 1.1], [7.9, 0.6]],
   broad: [[1.2, 0.5], [3.8, 2.0]],
   jungle: [[2, 0.6], [4.5, 0.6], [7.4, 3.0]],
   palm: [[2.5, 0.4], [5.3, 2.4]],
@@ -104,7 +104,7 @@ export class ChunkManager {
       const s = sample(x, z), b = biome(s);
       // landmarks: a rare colossal stone head somewhere in the dunes
       let t = b === 'desert' && hash2(wi * 13 + 5, wj * 29 + 1) < 0.00005 && s.h < 30 ? 'stonehead'
-        : pickVegetation(b, r, s.h, b === 'sea' ? Math.max(0, vnoise(x * 0.012 + 40, z * 0.012 - 9)) : 0);
+        : pickVegetation(b, r, s.h, vnoise(x * 0.0035 + 61, z * 0.0035 - 14)); // stand: which kind of wood grows here
       if (!t) continue;
       (lists[t] || (lists[t] = [])).push(x, s.h - 0.15, z, hash2(wi + 77, wj - 31), wi, wj);
     }

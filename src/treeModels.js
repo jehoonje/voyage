@@ -140,25 +140,64 @@ function crown(cards, center, radii, count, size, { outBias = 0.65, sizeVar = 0.
   }
 }
 
-/** pine: radial tiers of drooping branch cards (two crossed planes per branch) */
-function pineTiers(cards, { h0 = 1.4, h1 = 7.2, tiers = 11, perTier = 7, maxLen = 2.7 }) {
-  for (let i = 0; i < tiers; i++) {
-    const t = i / (tiers - 1), y = h0 + (h1 - h0) * t, L = maxLen * (1 - t * 0.85) + 0.35;
-    for (let k = 0; k < perTier; k++) {
-      const a = i * 0.9 + (k / perTier) * 6.283 + rnd() * 0.4, dir = V(Math.cos(a), 0, Math.sin(a));
-      const side = V(-dir.z, 0, dir.x), w = 0.45 + L * 0.25, droop = L * (0.25 + rnd() * 0.15);
-      const b = V(0, y, 0), tip = b.clone().addScaledVector(dir, L).add(V(0, -droop, 0));
-      const shade = 0.5 + 0.6 * t;
-      const up = V(dir.x * 0.3, 1, dir.z * 0.3).normalize();
-      // horizontal plane
-      cards.quad(b.clone().addScaledVector(side, -w * 0.3), tip.clone().addScaledVector(side, -w * 0.5), tip.clone().addScaledVector(side, w * 0.5), b.clone().addScaledVector(side, w * 0.3),
-        [[0, 0.3], [1, 0], [1, 1], [0, 0.7]], [up, up, up, up], [shade * 0.7, shade, shade, shade * 0.7]);
-      // vertical plane through the same branch, for thickness from the side
-      const v = V(0, w * 0.45, 0);
-      cards.quad(b.clone().sub(v.clone().multiplyScalar(0.6)), tip.clone().sub(v), tip.clone().add(v), b.clone().add(v.clone().multiplyScalar(0.6)),
-        [[0, 0.3], [1, 0], [1, 1], [0, 0.7]], [up, up, up, up], [shade * 0.7, shade, shade, shade * 0.7]);
+/**
+ * Fir (Abies): whorls of near-level branches from the ground to a spire, each branch carrying
+ * flat sprays arranged like a fishbone, the whole forming a narrow cone. Returns the limbs
+ * (bark, for the bigger lower branches) and fills `cards` with the sprays.
+ */
+function firCrown(cards, { y0 = 0.5, y1 = 8.7, whorls = 14, maxLen = 2.4 } = {}) {
+  const limbs = [];
+  const quadSpray = (b, dir, len, w, roll, shadeIn, shadeOut, droop) => {
+    const up = V(0, 1, 0);
+    let n0 = up.clone().addScaledVector(dir, -up.dot(dir)).normalize();
+    n0.applyAxisAngle(dir, roll);
+    const side = V().crossVectors(n0, dir).normalize();
+    const e = b.clone().addScaledVector(dir, len).add(V(0, -droop, 0));
+    const out = V(b.x, 0, b.z).normalize(), nn = n0.clone().addScaledVector(out, 0.7).normalize();
+    cards.quad(b.clone().addScaledVector(side, -w * 0.25), e.clone().addScaledVector(side, -w * 0.5), e.clone().addScaledVector(side, w * 0.5), b.clone().addScaledVector(side, w * 0.25),
+      [[0, 0.38], [1, 0], [1, 1], [0, 0.62]], [nn, nn, nn, nn], [shadeIn, shadeOut, shadeOut, shadeIn]);
+  };
+  for (let i = 0; i < whorls; i++) {
+    const t = i / (whorls - 1), y = y0 + (y1 - y0) * Math.pow(t, 1.08);
+    const L = (maxLen * Math.pow(1 - t, 1.05) + 0.3) * (0.9 + rnd() * 0.2);
+    const nb = t > 0.7 ? 4 : 5;
+    for (let k = 0; k < nb; k++) {
+      const a = i * 2.4 + (k / nb) * 6.283 + (rnd() - 0.5) * 0.5;
+      const pitch = -0.12 + 0.35 * t + (rnd() - 0.5) * 0.08; // low boughs level, young ones lift
+      const dir = V(Math.cos(a) * Math.cos(pitch), Math.sin(pitch), Math.sin(a) * Math.cos(pitch));
+      const base = V(0, y, 0), tip = base.clone().addScaledVector(dir, L).add(V(0, -L * 0.12, 0));
+      if (L > 1.3) limbs.push(limb(base, tip, 0.018 + L * 0.008));
+      const sh = (d) => (0.55 + 0.5 * Math.min(1, d / maxLen)) * (0.82 + 0.28 * t); // inner and lower sprays darker
+      // fishbone: pairs of sprays angled forward off the branch, and one carrying on from its tip
+      const step = 0.56, pairs = Math.max(0, Math.floor((L - 0.2) / step));
+      for (let j = 0; j < pairs; j++) {
+        const s = 0.25 + j * step, b = base.clone().lerp(tip, s / L);
+        for (const lr of [-1, 1]) {
+          const ang = lr * (0.55 + rnd() * 0.2);
+          const d2 = dir.clone().applyAxisAngle(V(0, 1, 0), ang).normalize();
+          const len = Math.min(1.15, 0.55 + (L - s) * 0.4);
+          const roll = (0.45 + rnd() * 0.5) * (rnd() < 0.5 ? -1 : 1); // never edge-on: reads from the side too
+          quadSpray(b, d2, len, len * 0.62, roll, sh(s), sh(s + len), len * 0.14);
+        }
+      }
+      quadSpray(tip.clone().addScaledVector(dir, -0.15), dir, Math.min(1.1, 0.6 + L * 0.2), 0.6, (0.4 + rnd() * 0.4) * (rnd() < 0.5 ? -1 : 1), sh(L - 0.2), sh(L + 0.6), 0.1);
     }
   }
+  // short sprays tucked against the trunk between whorls, so it doesn't show bare through the cone
+  for (let i = 0; i < 14; i++) {
+    const t = i / 13, y = y0 + 0.3 + (y1 - y0 - 0.5) * t, a = i * 2.17;
+    const dir = V(Math.cos(a), 0.15 + t * 0.2, Math.sin(a)).normalize();
+    const len = 0.5 + (1 - t) * 0.6;
+    quadSpray(V(Math.cos(a) * 0.05, y, Math.sin(a) * 0.05), dir, len, len * 0.6, (0.5 + rnd() * 0.4) * (i % 2 ? 1 : -1), 0.5, 0.7, 0.06);
+  }
+  // the leader: a pointed spire of crossed upright sprays
+  for (const a of [0, 1.57]) {
+    const dir = V(0.02, 1, 0).normalize(), b = V(0, y1 - 0.2, 0);
+    const side = V(Math.cos(a), 0, Math.sin(a)), e = b.clone().addScaledVector(dir, 1.1), n = V(Math.cos(a + 1.57), 0.3, Math.sin(a + 1.57)).normalize();
+    cards.quad(b.clone().addScaledVector(side, -0.18), e.clone().addScaledVector(side, -0.02), e.clone().addScaledVector(side, 0.02), b.clone().addScaledVector(side, 0.18),
+      [[0, 0.3], [1, 0.45], [1, 0.55], [0, 0.7]], [n, n, n, n], [0.85, 1.1, 1.1, 0.85]);
+  }
+  return limbs;
 }
 
 /** willow curtains: vertical strand cards hanging from the crown rim, facing outward */
@@ -281,7 +320,7 @@ export function buildModels() {
       const a = k * 1.26 + rnd() * 0.3, from = V(bend * h * 0.6, 2.6 + rnd() * 0.6, 0);
       limbs.push(limb(from, V(cx + Math.cos(a) * 1.6, 4.4 + rnd() * 1.2, Math.sin(a) * 1.6), 0.13));
     }
-    M.broadTrunk = barkGeometry([trunk(h + 0.6, 0.4, 0.2, { bend, flare: 1.9, roots: 5, gnarl: 0.12 }), ...surfaceRoots(0.4, 6, 1.4, 0.18), ...limbs]);
+    M.broadTrunk = barkGeometry([trunk(h + 0.6, 0.38, 0.2, { bend, flare: 1.45, roots: 5, gnarl: 0.035, wander: 0.01 }), ...limbs]);
     const cards = new Cards();
     crown(cards, c, V(2.4, 1.9, 2.4), 95, 1.6);
     M.broadCrown = cards.geometry();
@@ -295,7 +334,7 @@ export function buildModels() {
       const y = 3.4 + k * 0.5, a = k * 2.3, from = V(bend * h * (y / h) ** 2, y, 0);
       limbs.push(limb(from, from.clone().add(V(Math.cos(a) * 1.1, 1.0 + rnd() * 0.6, Math.sin(a) * 1.1)), 0.05));
     }
-    M.birchTrunk = barkGeometry([trunk(h, 0.2, 0.06, { bend, flare: 1.45, uvU: 1, roots: 4, gnarl: 0.05, seg: 10 }), ...surfaceRoots(0.2, 4, 0.6, 0.08), ...limbs], [0.75, 1.05]);
+    M.birchTrunk = barkGeometry([trunk(h, 0.19, 0.06, { bend, flare: 1.25, uvU: 1, roots: 4, gnarl: 0.02, wander: 0.006, seg: 10 }), ...limbs], [0.75, 1.05]);
     const cards = new Cards();
     crown(cards, V(top(h, bend) * 0.7, 5.6, 0), V(1.6, 2.3, 1.6), 80, 1.25, { outBias: 0.5 });
     M.birchCrown = cards.geometry();
@@ -304,9 +343,10 @@ export function buildModels() {
   // pine: straight tall trunk, drooping tiered branches
   seed(3);
   {
-    M.pineTrunk = barkGeometry([trunk(7.6, 0.32, 0.08, { flare: 1.9, roots: 6, gnarl: 0.06, wander: 0.005 }), ...surfaceRoots(0.32, 5, 1.0, 0.14)]);
+    // fir: a slender straight trunk, mostly hidden inside a dense narrow cone of level boughs
     const cards = new Cards();
-    pineTiers(cards, {});
+    const boughs = firCrown(cards, {});
+    M.pineTrunk = barkGeometry([trunk(9.4, 0.2, 0.03, { flare: 1.35, roots: 6, gnarl: 0.025, wander: 0.002, seg: 10, hs: 8 }), ...boughs], [0.45, 0.95]);
     M.pineLeaves = cards.geometry();
   }
 
@@ -362,7 +402,7 @@ export function buildModels() {
       const a = k * 1.26 + 0.3;
       limbs.push(limb(V(cx * 0.8, 2.4, 0), V(cx + Math.cos(a) * 1.8, 4.2 + rnd() * 0.5, Math.sin(a) * 1.8), 0.15));
     }
-    M.willowTrunk = barkGeometry([trunk(h, 0.55, 0.3, { bend, flare: 2.0, roots: 4, gnarl: 0.16, wander: 0.08 }), ...surfaceRoots(0.55, 5, 1.6, 0.2), ...limbs], [0.5, 1.0]);
+    M.willowTrunk = barkGeometry([trunk(h, 0.52, 0.3, { bend, flare: 1.6, roots: 4, gnarl: 0.07, wander: 0.03 }), ...surfaceRoots(0.52, 3, 0.9, 0.14), ...limbs], [0.5, 1.0]);
     const dome = new Cards();
     crown(dome, V(cx, 4.4, 0), V(2.5, 1.1, 2.5), 40, 1.4);
     M.willowDome = dome.geometry();
