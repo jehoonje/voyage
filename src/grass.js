@@ -147,7 +147,7 @@ function createField(scene, { grid, spacing, geometry, map, stiff = 1, place }) 
   };
 }
 
-const GRASS_DENSITY = { meadow: 1, forest: 0.95, jungle: 0.95, mountain: 0.45, beach: 0.25 };
+const GRASS_DENSITY = { meadow: 1, forest: 0.95, jungle: 0.95, mountain: 0.45, beach: 0.04 }; // sea beaches: bare sand, the odd tuft at the back
 const GRASS_HEIGHT = { meadow: 1.15, forest: 0.85, jungle: 1.0, mountain: 0.5, beach: 0.55 };
 const DRY = [1.25, 1.05, 0.62];
 const FLOWER_DENSITY = { meadow: 0.55, forest: 0.08, jungle: 0.2, mountain: 0.18 };
@@ -163,6 +163,7 @@ export function createGrass(scene) {
       const b = biome(s), dens = GRASS_DENSITY[b] || 0;
       if (!dens) return 0;
       splat(s, sw, 0);
+      if (b === 'beach' && s.h < 1.8) return 0; // nothing on the open sand
       if (r >= dens * Math.max(sw[0], b === 'beach' ? 0.5 : 0)) return 0;
       // tint toward the ground's own colour, plus sun-dried patches
       groundColor(s, x, z, tmp);
@@ -196,7 +197,7 @@ export function createGrass(scene) {
       if (b === 'sea') return 0; // open sea shallows stay clear
       const shore = sstep(-0.6, 0.2, s.h) * (1 - sstep(1.2, 2.2, s.h)); // band around the water's edge
       // reeds belong to rivers and lakes; sandy sea beaches only get the odd clump
-      if (r >= shore * (b === 'beach' ? 0.12 : 0.75)) return 0;
+      if (r >= shore * (b === 'beach' ? 0.015 : 0.75)) return 0;
       out[0] = 0.95; out[1] = 0.95; out[2] = 0.9;
       return 1.5 + r * 0.9;
     },

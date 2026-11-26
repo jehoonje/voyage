@@ -23,6 +23,7 @@ import { createPhysics, SWIM_Y } from './physics.js';
 import { createPost } from './post.js';
 import { createWeather } from './weather.js';
 import { createAmbience } from './ambience.js';
+import { createFish } from './fish.js';
 
 // Keep the authored (non-linear) colours looking as designed.
 THREE.ColorManagement.enabled = false;
@@ -52,6 +53,7 @@ const world = new ChunkManager(scene);
 const DEBUG = new URLSearchParams(location.search); // testing aid: ?at=x,z  &t=0..1 (clock)  &w=weather
 const weather = createWeather(scene, { force: DEBUG.get('w') });
 const ambience = createAmbience(scene);
+const fish = createFish(scene);
 
 /* what surrounds the player, averaged over a small ring and eased over time */
 const bio = { desert: 0, jungle: 0, forest: 0, meadow: 0, sea: 0, snow: 0, cold: 0 };
@@ -225,6 +227,7 @@ function step(now) {
   const sky = weather.update(dt, camera, bio, env.light);
   env.update(dt, now, P.x, P.z, P.y, camera, bio, sky);
   ambience.update(dt, now, camera, P.x, P.y, P.z, bio, env.light, sky, env.sun);
+  fish.update(dt, P);
   fires.setNight(env.light.night);
   grass.setLight(env.light.amb, env.light.sun, fires.glow.strength > 0 ? fires.glow : null);
   updateDayNight(dt);
