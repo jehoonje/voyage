@@ -125,7 +125,11 @@ export function createAccount({ onReady }) {
   });
 
   // back from a password-reset email: ask for the new password before going in
-  const recovering = new URLSearchParams(location.search).has('reset');
+  // back from Google / Kakao with an error (declined, missing email…): say so instead of a silent start card
+  const q = new URLSearchParams(location.search), hq = new URLSearchParams(location.hash.slice(1));
+  const oauthErr = q.get('error_description') || hq.get('error_description');
+  if (oauthErr) history.replaceState(null, '', here());
+  const recovering = q.has('reset');
   if (recovering) history.replaceState(null, '', here() + location.hash);
   supabase.auth.onAuthStateChange((event, session) => {
     // run outside the callback: supabase-js warns against awaiting its own calls in here
@@ -138,7 +142,15 @@ export function createAccount({ onReady }) {
   // a returning player (or one coming back from Google / Kakao / an email link) goes straight in
   supabase.auth.getSession().then(({ data }) => {
     if (data.session && recovering) show('reset');
-    else if (data.session) enter(data.session.user); else show('auth');
+    else if (data.session) enter(data.session.user);
+    else {
+      show('auth');
+      if (oauthErr) {
+        methods(true);
+        msg(/email/i.test(oauthErr) ? "Sign-in didn't finish: we couldn't get your email from the provider. Try again and allow email access."
+          : /cancel|denied|access_denied/i.test(oauthErr) ? 'Sign-in was cancelled.' : "Sign-in didn't finish: " + oauthErr);
+      }
+    }
   }).catch(() => { show('auth'); msg("Can't reach the server — you can still play as a guest."); });
 
   return {};
