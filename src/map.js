@@ -3,8 +3,8 @@ import { clamp, mix, sstep } from './noise.js';
 import { sample, groundColor } from './world.js';
 import { CELL } from './progress.js';
 
-const LEGEND = [['숲', '#527f3a'], ['정글', '#30702b'], ['초원', '#94bf59'], ['사막', '#e3b570'],
-  ['모래사장', '#e8d499'], ['산', '#80766b'], ['설산', '#f2f4f7'], ['물', '#3f8fc4']];
+const LEGEND = [['Forest', '#527f3a'], ['Jungle', '#30702b'], ['Meadow', '#94bf59'], ['Desert', '#e3b570'],
+  ['Beach', '#e8d499'], ['Mountain', '#80766b'], ['Snowy peak', '#f2f4f7'], ['Water', '#3f8fc4']];
 
 export function createMap(progress, getPlayer) {
   const $ = (id) => document.getElementById(id);
@@ -57,7 +57,7 @@ export function createMap(progress, getPlayer) {
     ctx.fillStyle = '#f0b24a'; ctx.strokeStyle = '#2a1a06'; ctx.lineWidth = 2;
     ctx.fill(); ctx.stroke();
     ctx.restore();
-    $('mapStat').textContent = `밝힌 땅 ${progress.areaKm2().toFixed(2)} km² · 발견한 지역 ${st.regions.size}곳 · 지형 ${st.biomes.size}/9`;
+    $('mapStat').textContent = `Revealed ${progress.areaKm2().toFixed(2)} km² · ${st.regions.size} regions found · ${st.biomes.size}/9 terrains`;
   }
   const request = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
   const center = () => { const p = getPlayer(); cx = p.x / CELL; cz = p.z / CELL; };

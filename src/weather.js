@@ -13,7 +13,7 @@ const STATES = {
   storm: { cover: 1, rain: 1, storm: 1, fog: 0.25 },
   fog: { cover: 0.55, rain: 0, storm: 0, fog: 0.85 },
 };
-export const WEATHER_NAMES = { clear: '맑음', fair: '구름 조금', cloudy: '흐림', rain: '비', storm: '폭풍우', fog: '안개' };
+export const WEATHER_NAMES = { clear: 'Clear', fair: 'Fair', cloudy: 'Cloudy', rain: 'Rain', storm: 'Storm', fog: 'Fog' };
 const NEXT = { // [state, weight] — mostly fine days, rain comes and goes
   clear: [['clear', 2], ['fair', 4], ['cloudy', 1], ['fog', 0.6]],
   fair: [['clear', 3], ['fair', 1], ['cloudy', 3], ['fog', 0.5]],

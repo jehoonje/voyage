@@ -82,8 +82,8 @@ export function biome(s) {
 }
 
 export const BIOME_NAME = {
-  sea: '바다', river: '강', beach: '모래사장', desert: '사막', meadow: '초원',
-  forest: '숲', jungle: '정글', mountain: '산', snow: '설산',
+  sea: 'Sea', river: 'River', beach: 'Beach', desert: 'Desert', meadow: 'Meadow',
+  forest: 'Forest', jungle: 'Jungle', mountain: 'Mountain', snow: 'Snowy peak',
 };
 
 const C = {

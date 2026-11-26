@@ -20,15 +20,15 @@ export function createActions({ P, fires, fx, progress, onPickup }) {
 
   function startCamp() {
     if (kind) return false;
-    if (P.swim || !P.grounded) { progress.toast('야영', '여기서는 불을 피울 수 없어요', '땅 위에서 시도하세요'); return false; }
+    if (P.swim || !P.grounded) { progress.toast('Camp', "Can't light a fire here", 'Try on solid ground'); return false; }
     const x = P.x + Math.sin(P.face) * FIRE_DIST, z = P.z + Math.cos(P.face) * FIRE_DIST, h = sample(x, z).h;
-    if (h < 0.2) { progress.toast('야영', '여기서는 불을 피울 수 없어요', '물가에서 조금 떨어지세요'); return false; }
+    if (h < 0.2) { progress.toast('Camp', "Can't light a fire here", 'Move a little away from the water'); return false; }
     const have = progress.count('wood');
     if (!progress.takeItem('wood', CAMP_COST)) {
-      progress.toast('야영', '나무 조각이 부족해요', `${have} / ${CAMP_COST}개 · 나무를 캐서 모으세요`);
+      progress.toast('Camp', 'Not enough wood', `${have} / ${CAMP_COST} · chop trees to gather more`);
       return false;
     }
-    onPickup && onPickup(`나무 조각 −${CAMP_COST}`);
+    onPickup && onPickup(`Wood −${CAMP_COST}`);
     fire = fires.spawn(x, h, z);
     kind = 'camp'; phase = 'place'; t = 0;
     return true;
@@ -58,7 +58,7 @@ export function createActions({ P, fires, fx, progress, onPickup }) {
       fires.setLevel(fire, ease((t - 1.1) / 1.4));
       if (t > 2.7) {
         phase = 'sit'; t = 0;
-        progress.toast('야영', '모닥불을 피웠어요', '+10 XP');
+        progress.toast('Camp', 'Campfire lit', '+10 XP');
         progress.gain(10);
       }
     } else if (phase === 'sit') {
@@ -117,7 +117,7 @@ export function createActions({ P, fires, fx, progress, onPickup }) {
         tree.hidden = true; tree.busy = false;
         felled.set(tree.key, now + RESPAWN_MS);
         progress.addItem('wood', 1);
-        onPickup && onPickup('나무 조각 +1');
+        onPickup && onPickup('Wood +1');
         progress.gain(5);
         kind = null; tree = null;
         return null;

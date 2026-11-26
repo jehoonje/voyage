@@ -6,11 +6,11 @@ export const CELL = 16;
 const REVEAL = 3, REGION = 350, SAVE_KEY = 'mjdr-save';
 const need = (l) => 60 + l * 45;
 
-const ADJ = ['속삭이는', '잊혀진', '황금빛', '안개 낀', '고요한', '붉은', '별빛', '바람의', '오래된', '푸른', '은빛', '그림자', '새벽의', '메아리치는'];
+const ADJ = ['Whispering', 'Forgotten', 'Golden', 'Misty', 'Silent', 'Crimson', 'Starlit', 'Windswept', 'Ancient', 'Azure', 'Silver', 'Shadow', 'Dawn', 'Echoing'];
 const NOUN = {
-  sea: ['바다', '만', '해협'], river: ['강', '강줄기', '여울'], beach: ['해안', '백사장', '모래톱'],
-  desert: ['사막', '모래언덕', '황야'], meadow: ['초원', '들판', '언덕'], forest: ['숲', '수림', '숲길'],
-  jungle: ['밀림', '정글', '덩굴숲'], mountain: ['산맥', '봉우리', '고원'], snow: ['설산', '빙봉', '얼음능선'],
+  sea: ['Sea', 'Bay', 'Strait'], river: ['River', 'Stream', 'Rapids'], beach: ['Coast', 'Sands', 'Sandbar'],
+  desert: ['Desert', 'Dunes', 'Wastes'], meadow: ['Meadow', 'Fields', 'Hills'], forest: ['Forest', 'Woods', 'Trail'],
+  jungle: ['Wilds', 'Jungle', 'Tangle'], mountain: ['Range', 'Peak', 'Highlands'], snow: ['Snowfields', 'Icecap', 'Frost Ridge'],
 };
 function regionName(rx, rz, b) {
   const a = hash2(rx * 13 + 5, rz * 29 - 7), c = hash2(rx - 3, rz * 3 + 1), ns = NOUN[b];
@@ -39,7 +39,7 @@ export function createProgress() {
 
   function hud() {
     const nd = need(st.lvl);
-    $('lvl').textContent = '나 Lv.' + st.lvl;
+    $('lvl').textContent = 'Me Lv.' + st.lvl;
     $('xpbar').style.width = (st.xp / nd) * 100 + '%';
     $('xptxt').textContent = st.xp + ' / ' + nd + ' XP';
     $('area').textContent = areaKm2().toFixed(2) + ' km²';
@@ -50,7 +50,7 @@ export function createProgress() {
     st.xp += n; dirty = true;
     while (st.xp >= need(st.lvl)) {
       st.xp -= need(st.lvl); st.lvl++;
-      toast('레벨 업', '나 Lv.' + st.lvl, '더 먼 곳이 당신을 부릅니다');
+      toast('Level up', 'Me Lv.' + st.lvl, 'Farther places are calling');
     }
     hud();
   }
@@ -118,8 +118,8 @@ export function createProgress() {
         const nm = regionName(rx, rz, b);
         $('placeName').textContent = nm;
         $('placeBiome').textContent = BIOME_NAME[b];
-        if (!st.biomes.has(b)) { st.biomes.add(b); toast('새로운 지형', BIOME_NAME[b], '+100 XP'); gain(100); }
-        else if (!st.regions.has(rk)) { toast('새 지역 발견', nm, '+25 XP'); gain(25); }
+        if (!st.biomes.has(b)) { st.biomes.add(b); toast('New terrain', BIOME_NAME[b], '+100 XP'); gain(100); }
+        else if (!st.regions.has(rk)) { toast('Region discovered', nm, '+25 XP'); gain(25); }
         st.regions.add(rk); dirty = true;
       }
     },

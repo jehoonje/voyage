@@ -79,11 +79,11 @@ function updateBio(dt, x, z, snap = false) {
 }
 weather.onChange((st) => {
   if (!started) return;
-  const what = bio.cold > 0.5 ? { rain: ['눈', '눈이 내리기 시작해요'], storm: ['눈보라', '거센 눈보라가 몰아쳐요'] }
-    : bio.desert > 0.5 ? { rain: ['모래바람', '모래바람이 불어와요'], storm: ['모래폭풍', '앞이 보이지 않을 만큼 모래가 일어요'] }
-    : { rain: ['비', '비가 내리기 시작해요'], storm: ['폭풍우', '천둥이 치기 시작해요'] };
-  const msg = what[st] || (st === 'fog' ? ['안개', '안개가 짙게 깔려요'] : st === 'clear' ? ['맑음', '하늘이 활짝 개었어요'] : null);
-  if (msg) progress.toast('날씨', msg[0], msg[1]);
+  const what = bio.cold > 0.5 ? { rain: ['Snow', 'Snow is starting to fall'], storm: ['Blizzard', 'A fierce blizzard sweeps in'] }
+    : bio.desert > 0.5 ? { rain: ['Sandstorm', 'The sand is starting to blow'], storm: ['Dust storm', "Sand so thick you can't see ahead"] }
+    : { rain: ['Rain', 'Rain is starting to fall'], storm: ['Storm', 'Thunder rolls in'] };
+  const msg = what[st] || (st === 'fog' ? ['Fog', 'A thick fog settles in'] : st === 'clear' ? ['Clear', 'The sky has cleared'] : null);
+  if (msg) progress.toast('Weather', msg[0], msg[1]);
 });
 const hero = createCharacter(scene);
 const savedSpec = loadSpec();
@@ -136,10 +136,10 @@ const ctxBtn = document.getElementById('ctxBtn'), campBtn = document.getElementB
 let ctxMode = '', nearTree = null, ctxTimer = 0;
 function refreshContext() {
   let mode = '', label = '';
-  if (actions.sitting) { mode = 'douse'; label = '불 끄고 일어나기'; }
+  if (actions.sitting) { mode = 'douse'; label = 'Put out fire and stand'; }
   else if (!actions.busy && !P.swim) {
     nearTree = world.nearestTree(P.x, P.z, 2.8);
-    if (nearTree) { mode = 'chop'; label = '나무 캐기'; }
+    if (nearTree) { mode = 'chop'; label = 'Chop tree'; }
   }
   if (mode !== ctxMode) { ctxMode = mode; ctxBtn.hidden = !mode; ctxBtn.textContent = label; }
   document.body.classList.toggle('busy', actions.busy);
@@ -262,8 +262,8 @@ function updateDayNight(dt) {
   if ((clockT -= dt) <= 0) { clockT = 0.5; clockEl.textContent = env.clock(); }
   const isNight = wasNight ? env.light.night > 0.4 : env.light.night > 0.6; // hysteresis
   if (wasNight !== null && isNight !== wasNight) {
-    if (isNight) progress.toast('밤', '어둠이 내려앉았어요', '모닥불을 피우면 주변이 밝아져요');
-    else progress.toast('아침', '날이 밝았어요', '다시 멀리까지 보여요');
+    if (isNight) progress.toast('Night', 'Darkness has fallen', 'A campfire will light your surroundings');
+    else progress.toast('Morning', 'Day has broken', 'You can see far again');
   }
   wasNight = isNight;
 }
@@ -283,9 +283,9 @@ editBtn.addEventListener('click', () => openCreator(true));
 contBtn.addEventListener('click', async () => {
   if (!loadSpec()) { openCreator(true); return; } // saved before characters existed
   if (!hero.ready) {
-    contBtn.disabled = true; contBtn.textContent = '캐릭터 준비 중…';
+    contBtn.disabled = true; contBtn.textContent = 'Preparing character…';
     while (!hero.ready) await new Promise((r) => setTimeout(r, 100));
-    contBtn.disabled = false; contBtn.textContent = '이어서 탐험';
+    contBtn.disabled = false; contBtn.textContent = 'Continue';
   }
   begin(true);
 });

@@ -10,7 +10,7 @@ const ICON_WOOD = `<svg viewBox="0 0 40 40" aria-hidden="true">
 </svg>`;
 
 export const ITEMS = {
-  wood: { name: '나무 조각', desc: `나무를 캐면 1개씩 얻어요. 야영에 ${CAMP_COST}개가 필요해요.`, icon: ICON_WOOD },
+  wood: { name: 'Wood', desc: `One piece for each tree you chop. Making camp takes ${CAMP_COST}.`, icon: ICON_WOOD },
 };
 
 export function createInventory(progress) {

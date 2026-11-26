@@ -43,12 +43,12 @@ export function createCreator({ renderer, hero, onDone }) {
     clearTimeout(busyTimer);
     busyTimer = setTimeout(() => { if (n === applying) busy.hidden = false; }, 150);
     hero.apply(spec).then((done) => { if (done && n === applying) { clearTimeout(busyTimer); busy.hidden = true; } })
-      .catch((e) => { busy.hidden = false; busy.textContent = '만들기에 실패했어요 · ' + e.message; });
+      .catch((e) => { busy.hidden = false; busy.textContent = "Couldn't build it · " + e.message; });
   }
   function change(patch) { Object.assign(spec, patch); spec = sanitize(spec); render(); rebuild(); }
 
   /* ---------- UI ---------- */
-  const TABS = [['face', '얼굴'], ['hair', '머리'], ['hat', '모자'], ['top', '상의'], ['bottom', '하의'], ['shoes', '신발'], ['acc', '장신구']];
+  const TABS = [['face', 'Face'], ['hair', 'Hair'], ['hat', 'Hat'], ['top', 'Top'], ['bottom', 'Bottoms'], ['shoes', 'Shoes'], ['acc', 'Extras']];
   tabsEl.innerHTML = TABS.map(([k, n]) => `<button role="tab" data-tab="${k}">${n}</button>`).join('');
   tabsEl.addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) { tab = b.dataset.tab; render(); } });
 
@@ -57,36 +57,36 @@ export function createCreator({ renderer, hero, onDone }) {
     `<button class="chip" data-f="${field}" data-v="${k}" aria-pressed="${k === cur}">${v.name}</button>`).join('')}</div>`;
   const swatches = (field, pal, cur) => `<div class="sw">${pal.map((c) =>
     `<button class="swc" style="--c:${hex(c)}" data-f="${field}" data-c="${c}" aria-pressed="${c === cur}" aria-label="${hex(c)}"></button>`).join('')}
-    <label class="swc pick${pal.includes(cur) ? '' : ' on'}" style="--c:${hex(cur)}" aria-label="직접 고르기"><input type="color" data-f="${field}" value="${hex(cur)}"><span>＋</span></label></div>`;
+    <label class="swc pick${pal.includes(cur) ? '' : ' on'}" style="--c:${hex(cur)}" aria-label="Pick any colour"><input type="color" data-f="${field}" value="${hex(cur)}"><span>＋</span></label></div>`;
 
   function render() {
     for (const b of tabsEl.children) b.setAttribute('aria-selected', b.dataset.tab === tab);
     const s = spec;
     let h = '';
     if (tab === 'face') {
-      h = sec('피부색', swatches('skin', SKIN_TONES, s.skin)) + sec('눈 모양', chips('eyes', EYES, s.eyes)) +
-        sec('눈동자 색', swatches('iris', IRIS_COLORS, s.iris)) +
-        sec('주근깨', `<div class="chips"><button class="chip" data-f="freckles" data-v="0" aria-pressed="${!s.freckles}">없음</button><button class="chip" data-f="freckles" data-v="1" aria-pressed="${s.freckles}">있음</button></div>`);
+      h = sec('Skin', swatches('skin', SKIN_TONES, s.skin)) + sec('Eyes', chips('eyes', EYES, s.eyes)) +
+        sec('Eye colour', swatches('iris', IRIS_COLORS, s.iris)) +
+        sec('Freckles', `<div class="chips"><button class="chip" data-f="freckles" data-v="0" aria-pressed="${!s.freckles}">None</button><button class="chip" data-f="freckles" data-v="1" aria-pressed="${s.freckles}">Yes</button></div>`);
     } else if (tab === 'hair') {
-      h = sec('헤어스타일', chips('hair', HAIR, s.hair)) + sec('머리 색', swatches('hairColor', HAIR_COLORS, s.hairColor));
+      h = sec('Hairstyle', chips('hair', HAIR, s.hair)) + sec('Hair colour', swatches('hairColor', HAIR_COLORS, s.hairColor));
     } else if (tab === 'hat') {
-      h = sec('모자', chips('hat', HATS, s.hat)) + (s.hat !== 'none' ? sec('모자 색', swatches('hatColor', GEAR_COLORS, s.hatColor)) : '');
+      h = sec('Hat', chips('hat', HATS, s.hat)) + (s.hat !== 'none' ? sec('Hat colour', swatches('hatColor', GEAR_COLORS, s.hatColor)) : '');
     } else if (tab === 'top') {
-      h = sec('상의', chips('top', TOPS, s.top)) + sec('색', swatches('topColor', GEAR_COLORS, s.topColor)) + sec(TOPS[s.top].accentName + ' 색', swatches('topAccent', GEAR_COLORS, s.topAccent));
+      h = sec('Top', chips('top', TOPS, s.top)) + sec('Colour', swatches('topColor', GEAR_COLORS, s.topColor)) + sec(TOPS[s.top].accentName + ' colour', swatches('topAccent', GEAR_COLORS, s.topAccent));
     } else if (tab === 'bottom') {
-      h = sec('하의', chips('bottom', BOTTOMS, s.bottom)) + sec(BOTTOMS[s.bottom].tex ? '색 (무늬 위에 덧칠)' : '색', swatches('bottomColor', GEAR_COLORS, s.bottomColor));
+      h = sec('Bottoms', chips('bottom', BOTTOMS, s.bottom)) + sec(BOTTOMS[s.bottom].tex ? 'Colour (tints the pattern)' : 'Colour', swatches('bottomColor', GEAR_COLORS, s.bottomColor));
     } else if (tab === 'shoes') {
-      h = sec('신발', chips('shoes', SHOES, s.shoes)) + sec('색', swatches('shoesColor', GEAR_COLORS, s.shoesColor)) + sec('밑창 색', swatches('soleColor', GEAR_COLORS, s.soleColor));
+      h = sec('Shoes', chips('shoes', SHOES, s.shoes)) + sec('Colour', swatches('shoesColor', GEAR_COLORS, s.shoesColor)) + sec('Sole colour', swatches('soleColor', GEAR_COLORS, s.soleColor));
     } else {
       const worn = Object.keys(s.acc);
       if (!worn.includes(accSel)) accSel = worn[worn.length - 1] || null;
-      h = sec('장신구 <small>여러 개 고를 수 있어요 · 같은 종류는 하나만</small>', `<div class="chips">${Object.entries(ACCESSORIES).map(([k, v]) =>
+      h = sec('Extras <small>pick several · one of each kind</small>', `<div class="chips">${Object.entries(ACCESSORIES).map(([k, v]) =>
         `<button class="chip" data-f="acc" data-v="${k}" aria-pressed="${!!s.acc[k]}">${v.name}</button>`).join('')}</div>`);
       if (accSel) {
         const A = ACCESSORIES[accSel];
-        h += sec('색을 바꿀 장신구', `<div class="chips">${worn.map((k) => `<button class="chip sm" data-f="accSel" data-v="${k}" aria-pressed="${k === accSel}">${ACCESSORIES[k].name}</button>`).join('')}</div>`);
-        h += sec(`${A.name} · ${A.cName || '색'}`, swatches('accC', GEAR_COLORS, s.acc[accSel].c));
-        if (A.c2 !== undefined) h += sec(`${A.name} · 끈 색`, swatches('accC2', GEAR_COLORS, s.acc[accSel].c2));
+        h += sec('Recolour', `<div class="chips">${worn.map((k) => `<button class="chip sm" data-f="accSel" data-v="${k}" aria-pressed="${k === accSel}">${ACCESSORIES[k].name}</button>`).join('')}</div>`);
+        h += sec(`${A.name} · ${A.cName || 'colour'}`, swatches('accC', GEAR_COLORS, s.acc[accSel].c));
+        if (A.c2 !== undefined) h += sec(`${A.name} · strap colour`, swatches('accC2', GEAR_COLORS, s.acc[accSel].c2));
       }
     }
     body.innerHTML = h;

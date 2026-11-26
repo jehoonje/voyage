@@ -321,7 +321,7 @@ export function createEnvironment(scene, startTime = 0.3) {
     /** in-game clock, e.g. "오전 9:40" */
     clock() {
       const mins = Math.floor(time * 24 * 60), h = Math.floor(mins / 60) % 24, m = mins % 60;
-      return (h < 12 ? '오전 ' : '오후 ') + (h % 12 || 12) + ':' + String(m).padStart(2, '0');
+      return (h % 12 || 12) + ':' + String(m).padStart(2, '0') + (h < 12 ? ' AM' : ' PM');
     },
     /** bio: biome weights around the player; wx: weather state (weather.js) */
     update(dt, now, px, pz, py, camera, bio, wx) {
