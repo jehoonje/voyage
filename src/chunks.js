@@ -4,12 +4,12 @@ import { hash2, vnoise } from './noise.js';
 import { sample, biome, groundColor, splat, weights } from './world.js';
 import { createTerrainMaterial } from './terrainMaterial.js';
 import { TYPES, TINT, pickVegetation } from './vegetation.js';
-import { CHOPPABLE, felled, poseTree } from './forestry.js';
+import { CHOPPABLE, felled, poseTree, treeStretch } from './forestry.js';
 
 export const CHUNK = 48;
 const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 // phones stream a smaller ring of chunks (dense foliage is expensive)
-const SEG = 16, RADIUS = touch ? 2 : 3, STEP = CHUNK / SEG, VEG_GRID = 4;
+const SEG = 32, RADIUS = touch ? 2 : 3, STEP = CHUNK / SEG, VEG_GRID = 4;
 /** trunk radius per type, before instance scale */
 const TRUNK_R = { pine: 0.3, snowpine: 0.3, broad: 0.36, jungle: 0.5, palm: 0.26, cactus: 0.42, birch: 0.17, willow: 0.5 };
 /** solid props: [collider radius, scale range [min, span]] before instance scale */
@@ -126,6 +126,7 @@ export class ChunkManager {
           dummy.position.set(L[q * 6], L[q * 6 + 1] - (t === 'stonehead' ? 0.6 : 0), L[q * 6 + 2]);
           dummy.rotation.set(0, rr * 6.283, 0);
           if (P && !P[0]) dummy.scale.set(sc * (1 + rr), sc * 0.65, sc); // boulders: squat
+          else if (TRUNK_R[t] && t !== 'cactus') dummy.scale.set(sc, sc * treeStretch(rr), sc);
           else dummy.scale.setScalar(sc);
           dummy.updateMatrix();
           im.setMatrixAt(q, dummy.matrix);

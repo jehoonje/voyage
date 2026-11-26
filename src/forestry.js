@@ -2,6 +2,8 @@
 // a tree record knows its meshes and instance index, so it can be posed alone.
 import * as THREE from 'three';
 
+/** trees of one kind still differ in height: a per-tree vertical stretch */
+export const treeStretch = (rr) => 0.84 + 0.34 * ((rr * 7.31) % 1);
 export const CHOPPABLE = new Set(['pine', 'snowpine', 'broad', 'jungle', 'palm', 'birch', 'willow']);
 export const RESPAWN_MS = 45000;
 const GROW_MS = 2500;
@@ -19,7 +21,8 @@ export function poseTree(t, fall = 0, dx = 0, dz = 1, grow = 1) {
   qYaw.setFromAxisAngle(UP, t.rr * 6.283);
   d.position.set(t.x, t.y, t.z);
   d.quaternion.copy(qFall).multiply(qYaw);
-  d.scale.setScalar(t.sc * Math.max(grow, 0.0001));
+  const g = t.sc * Math.max(grow, 0.0001);
+  d.scale.set(g, g * treeStretch(t.rr), g);
   d.updateMatrix();
   for (const m of t.meshes) {
     m.setMatrixAt(t.idx, d.matrix);

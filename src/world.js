@@ -11,6 +11,20 @@ export function sample(x, z) {
   let r = 1 - Math.abs(vnoise(x * 0.0045 + 11, z * 0.0045 + 77));
   r = r * r * r;
   h += r * 78 * mm * clamp(h / 8, 0, 1); // ridges
+  // mountain flanks: spurs and eroded gullies (ridged multifractal, domain-warped), crags up high
+  const hi = mm * sstep(10, 34, h);
+  if (hi > 0.001) {
+    const wx = x + vnoise(x * 0.006 + 3, z * 0.006) * 40, wz = z + vnoise(x * 0.006, z * 0.006 - 5) * 40;
+    let sum = 0, amp = 1, f = 0.011, prev = 1;
+    for (let k = 0; k < 3; k++) {
+      const n = 1 - Math.abs(vnoise(wx * f + k * 13.1, wz * f - k * 7.7));
+      const v = n * n * prev;
+      sum += v * amp; prev = clamp(v * 1.6, 0, 1); amp *= 0.45; f *= 2.1;
+    }
+    h += (sum - 0.42) * 15 * hi;
+    const crag = Math.max(0, vnoise(x * 0.075 + 5, z * 0.075 - 2) - 0.15);
+    h += (crag * crag * 7 + vnoise(x * 0.16, z * 0.16) * 0.6) * hi * sstep(22, 42, h);
+  }
   const t = fbm(x * 0.0007 + 50, z * 0.0007 - 80, 3), m = fbm(x * 0.0009 - 200, z * 0.0009 + 130, 3);
   // deserts: long wind-built dunes, and red mesas rising in steep terraces
   const dw = desertWeight(t, m) * sstep(2, 7, h) * (1 - mm);
@@ -18,15 +32,23 @@ export function sample(x, z) {
     const u = x * 0.82 + z * 0.57, v = -x * 0.57 + z * 0.82, wob = fbm(x * 0.004 + 21, z * 0.004 - 5, 2);
     const ph = u * 0.03 + wob * 4 + v * 0.004;
     const crest = 1 - Math.abs(Math.sin(ph)); // sharp crests, wide troughs
-    h += (crest * crest * 4.2 + fbm(x * 0.012, z * 0.012, 2) * 1.5) * dw;
-    const mn = fbm(x * 0.0045 - 333, z * 0.0045 + 71, 3) + vnoise(x * 0.03, z * 0.03) * 0.025;
-    const mesa = sstep(0.17, 0.2, mn) * 9 + sstep(0.27, 0.295, mn) * 7 + sstep(0.37, 0.39, mn) * 6;
+    // dune fields swell and fade; a second, crossing set of smaller dunes breaks up the rows
+    const field = 0.55 + 0.9 * (vnoise(x * 0.0025 + 8, z * 0.0025 - 3) * 0.5 + 0.5);
+    const ph2 = (x * 0.31 - z * 0.95) * 0.05 + wob * 3;
+    const crest2 = 1 - Math.abs(Math.sin(ph2));
+    h += (crest * crest * 4.2 * field + crest2 * crest2 * crest2 * 1.6 + fbm(x * 0.012, z * 0.012, 2) * 1.5 + vnoise(x * 0.05, z * 0.05) * 0.45) * dw;
+    // mesas: ragged, gully-cut cliff edges, tiers, and a skirt of talus at the foot
+    const mn = fbm(x * 0.0045 - 333, z * 0.0045 + 71, 3) + vnoise(x * 0.03, z * 0.03) * 0.03 + vnoise(x * 0.09, z * 0.09) * 0.008;
+    const mesa = sstep(0.115, 0.172, mn) * 2.4 + sstep(0.17, 0.195, mn) * 8 + sstep(0.27, 0.29, mn) * 7 + sstep(0.37, 0.385, mn) * 6
+      + sstep(0.2, 0.26, mn) * vnoise(x * 0.04 - 9, z * 0.04) * 1.2; // weathered, uneven tops
     h += mesa * sstep(0.45, 0.8, dw);
   }
   const rv = Math.abs(fbm(x * 0.0022 + 900, z * 0.0022 - 300, 3));
   const rw = (1 - sstep(0.012, 0.05, rv)) * (1 - mm * 0.85) * (h > -1 ? 1 : 0); // rivers
   h = mix(h, -2.6, rw);
-  h += vnoise(x * 0.09, z * 0.09) * 0.5;
+  // everyday unevenness: low swells and hummocks on dry land, fading out at the water's edge
+  const land = sstep(1, 4, h) * (1 - rw);
+  h += vnoise(x * 0.09, z * 0.09) * 0.5 + (fbm(x * 0.035 + 7, z * 0.035 - 3, 2) * 1.6 + vnoise(x * 0.14, z * 0.14) * 0.35) * land;
   return {
     h,
     t, // temperature

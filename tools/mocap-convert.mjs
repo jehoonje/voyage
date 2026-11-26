@@ -9,7 +9,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { BONES, BONE } from '../src/character/rig.js';
 
 const FPS = 30, HIP_Y = 0.42; // our rest hip height (model metres)
-const STRIDE = 1.2; // cartoon stride: leg swing angles (front/back) are opened up by this much
+const STRIDE = 1.4; // cartoon stride: leg swing angles (front/back) are opened up by this much
 const V = (a) => new THREE.Vector3(...a);
 const X = new THREE.Vector3(1, 0, 0), Z = new THREE.Vector3(0, 0, 1);
 /** take out part of a world rotation's forward pitch (and side roll): our big head and pack exaggerate the lean */

@@ -2,6 +2,9 @@
 // slope-aware, detail fades with distance. No image textures.
 // Deserts get wind ripples and red layered rock; the sea floor shows through clear
 // turquoise shallows with moving caustics and a line of surf; rain darkens the ground.
+// Surfaces carry real relief at fragment level: a procedural height per layer (rock ledges,
+// blocks and cracks, sand ripples, turf hummocks, snow drifts) bends the lighting normal,
+// and hollows are shaded darker.
 import * as THREE from 'three';
 import { windTime } from './wind.js';
 import { ATMOS } from './atmos.js';
@@ -18,6 +21,7 @@ float fb(vec2 p){ return vn(p)*.5 + vn(p*2.03+7.)*.3 + vn(p*4.1-3.)*.2; }
 `;
 
 const FRAG_SPLAT = /* glsl */ `
+float tBump = 0.;
 {
   vec2 p = vWP.xz;
   float fade = 1. - smoothstep(40., 150., vDist);
@@ -39,17 +43,26 @@ const FRAG_SPLAT = /* glsl */ `
 
   // rock: strata bands, cracks
   float strata = sin(vWP.y*1.7 + nA*5.)*.5 + .5;
-  float crack = 1. - smoothstep(0., .05, abs(vn(p*.8 + vWP.y*.25) - .5));
-  vec3 rockC = mix(vec3(.47,.44,.4), base, .3) * (.78 + .24*strata*fade + .16*nB) * (1. - .35*crack*fade);
+  float steepF = 1. - smoothstep(.5, .8, vNy); // cliff-ness: ledges and cracks belong on faces, not flats
+  float crack = (1. - smoothstep(0., .03, abs(vn(p*.8 + vWP.y*.25) - .5))) * (.25 + .75 * steepF);
+  // rock relief (metres): stepped ledges every ~2 m, blocky faces, sunken cracks
+  vec2 rq = vec2(vWP.x + vWP.z * .7, vWP.y);
+  float ledgeS = fract(vWP.y * .5 + nA * .4 + vn(p * .04) * 1.5);
+  float rockH = smoothstep(.5, .92, ledgeS) * .32 * steepF + vn(rq * .7 + p * .3) * .38 + vn(rq * 2.3 - p * .6) * .12 - crack * .05;
+  vec3 rockC = mix(vec3(.47,.44,.4), base, .3) * (.78 + .24*strata*fade + .16*nB) * (1. - .22*crack*fade);
   // desert rock: banded red sandstone (dark rust, orange, cream)
   float band = fract(vWP.y*.42 + nA*.25 + vn(p*.05)*.6);
   vec3 sandstone = band < .35 ? vec3(.62,.3,.2) : band < .7 ? vec3(.78,.47,.29) : band < .82 ? vec3(.88,.72,.54) : vec3(.56,.27,.19);
-  sandstone *= (.82 + .2*nB + .12*strata*fade) * (1. - .3*crack*fade);
+  sandstone *= (.82 + .2*nB + .12*strata*fade) * (1. - .18*crack*fade);
   rockC = mix(rockC, sandstone, smoothstep(.2, .6, vD));
 
   // snow: bright, cool hollows
   vec3 snowC = vec3(.93,.95,.99)*(.93 + .07*nA) - vec3(.07,.035,0.)*(1.-nB)*.6*fade;
   snowC += vec3(.35) * step(.992, h21(floor(p*9.))) * fade; // glints
+
+  float sandH = ridge * .06 * vD + rip * .025;
+  float grassH = (nA - .5) * .28 + (nB - .5) * .07;
+  float snowH = (nA - .5) * .35 + (nB - .5) * .05;
 
   // weights: vertex splat, steep slopes → rock, then height-blend for organic edges
   vec4 w = vW;
@@ -60,6 +73,11 @@ const FRAG_SPLAT = /* glsl */ `
   float mx = max(max(hb.x, hb.y), max(hb.z, hb.w));
   vec4 b = max(hb - mx + .18, 0.); b /= b.x + b.y + b.z + b.w;
   diffuseColor.rgb = grass*b.x + sand*b.y + rockC*b.z + snowC*b.w;
+  float bumpFade = 1. - smoothstep(25., 95., vDist);
+  tBump = dot(b, vec4(grassH, sandH, rockH, snowH)) * bumpFade;
+  // hollows and cracks catch less light
+  diffuseColor.rgb *= mix(1., .8 + .3 * smoothstep(.0, .4, rockH), b.z * bumpFade);
+  diffuseColor.rgb *= 1. - .12 * b.x * smoothstep(.0, -.15, grassH) * bumpFade;
   // bare soil peeking through the turf
   diffuseColor.rgb = mix(diffuseColor.rgb, base * vec3(.72, .6, .46), .3 * b.x * smoothstep(.55, .85, nC) * fade);
   // wet, darker bank along the waterline; rain wets everything
@@ -101,7 +119,17 @@ export function createTerrainMaterial() {
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWP = transformed; vNy = objectNormal.y; vDist = -mvPosition.z; vW = aW; vD = aD;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\n' + FRAG_HEAD)
-      .replace('#include <color_fragment>', '#include <color_fragment>\n' + FRAG_SPLAT);
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + FRAG_SPLAT)
+      // bend the normal by the procedural height (bump mapping from screen-space derivatives)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{
+  vec3 sp = -vViewPosition, sx = dFdx(sp), sy = dFdy(sp);
+  vec3 r1 = cross(sy, normal), r2 = cross(normal, sx);
+  float det = dot(sx, r1);
+  vec2 dh = vec2(dFdx(tBump), dFdy(tBump));
+  vec3 grad = sign(det) * (dh.x * r1 + dh.y * r2);
+  if (abs(det) > 1e-12) normal = normalize(abs(det) * normal - grad);
+}`);
   };
   return mat;
 }

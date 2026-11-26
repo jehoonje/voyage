@@ -20,22 +20,48 @@ function randUnit() {
 
 /* ---------- bark parts ---------- */
 
-/** tapered trunk bending toward +x, flared at the roots; uv repeats the bark texture */
-function trunk(h, r0, r1, { bend = 0, flare = 1.3, seg = 8, hs = 6, uvU = 2 } = {}) {
+/**
+ * A living trunk rather than a pipe: bending toward +x, the foot swelling into root ridges
+ * (buttress lobes that twist a little as they climb), a knotted, uneven cross-section,
+ * and a gentle meander that vanishes at the base and the top (so limbs and crowns still meet it).
+ * uv repeats the bark texture.
+ */
+function trunk(h, r0, r1, { bend = 0, flare = 1.3, seg = 12, hs = 10, uvU = 2, roots = 5, gnarl = 0.09, wander = 0.05 } = {}) {
   const g = new THREE.CylinderGeometry(r1, r0, h, seg, hs).translate(0, h / 2, 0);
   const p = g.attributes.position, uv = g.attributes.uv;
+  const ph = rnd() * 6.283, sx = rnd() * 50, sz = rnd() * 50, tw = 0.4 + rnd() * 0.5;
+  const meander = Math.min(0.18, wander * h);
   for (let i = 0; i < p.count; i++) {
-    const y = p.getY(i), t = y / h, f = 1 + (flare - 1) * Math.pow(1 - t, 4);
-    p.setXYZ(i, p.getX(i) * f + bend * t * t * h, y, p.getZ(i) * f);
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), t = y / h;
+    const ang = Math.atan2(z, x);
+    const foot = Math.pow(Math.max(0, 1 - t), 3.2); // float32 tops can sit a hair above h
+    const lobe = Math.pow(Math.max(0, Math.cos(roots * (ang + t * tw) + ph)), 1.6); // root ridges
+    const knot = vnoise(ang * 1.7 + sx, y * 1.4 + sz) * 2 - 1;
+    const k = 1 + (flare - 1) * foot * (0.3 + 1.6 * lobe) + gnarl * knot * (0.6 + 0.4 * foot);
+    const s = Math.sin(Math.PI * t);
+    const ox = bend * t * t * h + s * meander * (vnoise(sx, t * 2.2) * 2 - 1);
+    const oz = s * meander * (vnoise(sz, t * 2.2 + 9) * 2 - 1);
+    p.setXYZ(i, x * k + ox, y, z * k + oz);
     uv.setXY(i, uv.getX(i) * uvU, uv.getY(i) * h / 1.6);
   }
   g.computeVertexNormals();
   return g;
 }
+/** surface roots snaking out from the foot of a trunk and diving into the soil */
+function surfaceRoots(r0, n, reach, rr, { ph = rnd() * 6.283 } = {}) {
+  const parts = [];
+  for (let k = 0; k < n; k++) {
+    const a = ph + (k / n) * 6.283 + (rnd() - 0.5) * 0.5, curl = (rnd() - 0.5) * 0.6, L = reach * (0.7 + rnd() * 0.6);
+    const at = (d, y, da = 0) => V(Math.cos(a + da) * d, y, Math.sin(a + da) * d);
+    const p0 = at(r0 * 0.55, r0 * 0.55), p1 = at(r0 + L * 0.35, r0 * 0.22, curl * 0.4), p2 = at(r0 + L * 0.75, 0.04, curl), p3 = at(r0 + L, -0.25, curl * 1.4);
+    parts.push(limb(p0, p1, rr), limb(p1, p2, rr * 0.62), limb(p2, p3, rr * 0.4));
+  }
+  return parts;
+}
 /** a branch from `from` to `to` */
 function limb(from, to, r) {
   const d = to.clone().sub(from), len = d.length();
-  const g = new THREE.CylinderGeometry(r * 0.55, r, len, 6, 1).translate(0, len / 2, 0);
+  const g = new THREE.CylinderGeometry(r * 0.55, r, len, 6, 1, true).translate(0, len / 2, 0); // open ends: tips hide in leaves or soil
   const uv = g.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i), uv.getY(i) * len / 1.6);
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, d.normalize()));
@@ -44,7 +70,7 @@ function limb(from, to, r) {
 }
 /** merge bark parts and bake a height AO gradient into vertex colours */
 function barkGeometry(parts, shade = [0.55, 1.05]) {
-  const g = mergeGeometries(parts.map((p) => (p.index ? p : p)));
+  const g = mergeGeometries(parts.map((p) => (p.index ? p : p.setIndex([...Array(p.attributes.position.count).keys()])))); // all indexed
   const p = g.attributes.position, n = p.count, col = new Float32Array(n * 3);
   let y1 = 0;
   for (let i = 0; i < n; i++) y1 = Math.max(y1, p.getY(i));
@@ -255,7 +281,7 @@ export function buildModels() {
       const a = k * 1.26 + rnd() * 0.3, from = V(bend * h * 0.6, 2.6 + rnd() * 0.6, 0);
       limbs.push(limb(from, V(cx + Math.cos(a) * 1.6, 4.4 + rnd() * 1.2, Math.sin(a) * 1.6), 0.13));
     }
-    M.broadTrunk = barkGeometry([trunk(h + 0.6, 0.4, 0.2, { bend, flare: 1.6 }), ...limbs]);
+    M.broadTrunk = barkGeometry([trunk(h + 0.6, 0.4, 0.2, { bend, flare: 1.9, roots: 5, gnarl: 0.12 }), ...surfaceRoots(0.4, 6, 1.4, 0.18), ...limbs]);
     const cards = new Cards();
     crown(cards, c, V(2.4, 1.9, 2.4), 95, 1.6);
     M.broadCrown = cards.geometry();
@@ -269,7 +295,7 @@ export function buildModels() {
       const y = 3.4 + k * 0.5, a = k * 2.3, from = V(bend * h * (y / h) ** 2, y, 0);
       limbs.push(limb(from, from.clone().add(V(Math.cos(a) * 1.1, 1.0 + rnd() * 0.6, Math.sin(a) * 1.1)), 0.05));
     }
-    M.birchTrunk = barkGeometry([trunk(h, 0.2, 0.06, { bend, flare: 1.3, uvU: 1 }), ...limbs], [0.75, 1.05]);
+    M.birchTrunk = barkGeometry([trunk(h, 0.2, 0.06, { bend, flare: 1.45, uvU: 1, roots: 4, gnarl: 0.05, seg: 10 }), ...surfaceRoots(0.2, 4, 0.6, 0.08), ...limbs], [0.75, 1.05]);
     const cards = new Cards();
     crown(cards, V(top(h, bend) * 0.7, 5.6, 0), V(1.6, 2.3, 1.6), 80, 1.25, { outBias: 0.5 });
     M.birchCrown = cards.geometry();
@@ -278,7 +304,7 @@ export function buildModels() {
   // pine: straight tall trunk, drooping tiered branches
   seed(3);
   {
-    M.pineTrunk = barkGeometry([trunk(7.6, 0.32, 0.08, { flare: 1.7 })]);
+    M.pineTrunk = barkGeometry([trunk(7.6, 0.32, 0.08, { flare: 1.9, roots: 6, gnarl: 0.06, wander: 0.005 }), ...surfaceRoots(0.32, 5, 1.0, 0.14)]);
     const cards = new Cards();
     pineTiers(cards, {});
     M.pineLeaves = cards.geometry();
@@ -288,13 +314,38 @@ export function buildModels() {
   seed(4);
   {
     const h = 9.2, bend = 0.03, cx = top(h, bend);
-    const buttress = [0, 2.1, 4.2].map((a) => new THREE.BoxGeometry(0.14, 1.4, 1.0).translate(0, 0.6, 0.6).rotateY(a));
+    // buttress fins: thin wedges running down the trunk and out across the ground, curving as they go
+    const buttress = [];
+    for (let k = 0; k < 5; k++) {
+      const a = k * 1.257 + rnd() * 0.4, fin = new THREE.BufferGeometry();
+      const out = 1.3 + rnd() * 0.7, up = 1.8 + rnd() * 1.2, th = 0.07, curl = (rnd() - 0.5) * 0.5;
+      const pts = [], N = 6;
+      for (let i = 0; i <= N; i++) { // profile: from high on the trunk to the far root tip, a concave curve
+        const u = i / N, d = 0.4 + out * u, y = up * Math.pow(1 - u, 2.2) - 0.15 * u;
+        pts.push([d, Math.max(-0.2, y), curl * u * u]);
+      }
+      const pos = [];
+      for (let i = 0; i < N; i++) {
+        const [d0, y0, c0] = pts[i], [d1, y1, c1] = pts[i + 1];
+        for (const s of [-1, 1]) {
+          const q = [[d0, y0, c0 + s * th], [d1, y1, c1 + s * th * 0.6], [d1, -0.2, c1 + s * th * 0.8], [d0, -0.2, c0 + s * th]];
+          const tri = s > 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
+          for (const j of tri) pos.push(...q[j]);
+        }
+        // the fin's sharp top edge
+        pos.push(d0, y0, c0 - th, d1, y1, c1 - th * 0.6, d1, y1, c1 + th * 0.6, d0, y0, c0 - th, d1, y1, c1 + th * 0.6, d0, y0, c0 + th);
+      }
+      fin.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      fin.setAttribute('uv', new THREE.Float32BufferAttribute(new Array((pos.length / 3) * 2).fill(0).map((_, i) => (i % 2 ? (pos[(i >> 1) * 3 + 1] / 1.6) : pos[(i >> 1) * 3] * 0.8)), 2));
+      fin.computeVertexNormals();
+      buttress.push(fin.rotateY(-a));
+    }
     const limbs = [];
     for (let k = 0; k < 6; k++) {
       const a = k * 1.05 + rnd() * 0.3;
       limbs.push(limb(V(cx * 0.8, 7.6, 0), V(cx + Math.cos(a) * 2.6, 8.8 + rnd() * 0.6, Math.sin(a) * 2.6), 0.16));
     }
-    M.jungTrunk = barkGeometry([trunk(h, 0.6, 0.3, { bend, flare: 2.0 }), ...buttress, ...limbs], [0.45, 1.0]);
+    M.jungTrunk = barkGeometry([trunk(h, 0.6, 0.3, { bend, flare: 2.2, roots: 5, gnarl: 0.1 }), ...buttress, ...surfaceRoots(0.6, 4, 2.0, 0.18), ...limbs], [0.45, 1.0]);
     const cards = new Cards();
     crown(cards, V(cx, 9.2, 0), V(3.8, 1.4, 3.8), 70, 2.1, { outBias: 0.4 });
     M.jungCrown = cards.geometry();
@@ -311,7 +362,7 @@ export function buildModels() {
       const a = k * 1.26 + 0.3;
       limbs.push(limb(V(cx * 0.8, 2.4, 0), V(cx + Math.cos(a) * 1.8, 4.2 + rnd() * 0.5, Math.sin(a) * 1.8), 0.15));
     }
-    M.willowTrunk = barkGeometry([trunk(h, 0.55, 0.3, { bend, flare: 1.8 }), ...limbs], [0.5, 1.0]);
+    M.willowTrunk = barkGeometry([trunk(h, 0.55, 0.3, { bend, flare: 2.0, roots: 4, gnarl: 0.16, wander: 0.08 }), ...surfaceRoots(0.55, 5, 1.6, 0.2), ...limbs], [0.5, 1.0]);
     const dome = new Cards();
     crown(dome, V(cx, 4.4, 0), V(2.5, 1.1, 2.5), 40, 1.4);
     M.willowDome = dome.geometry();
@@ -325,7 +376,7 @@ export function buildModels() {
   {
     const h = 5.4, bend = 0.12, tx = top(h, bend);
     M.palmTrunk = barkGeometry([
-      trunk(h, 0.27, 0.16, { bend, flare: 1.4, hs: 8, uvU: 1 }),
+      trunk(h, 0.27, 0.16, { bend, flare: 1.55, hs: 10, uvU: 1, roots: 9, gnarl: 0.03, wander: 0.02 }), // palms: a tight root boss, no spreading roots
       ...[0, 2.1, 4.2].map((a) => new THREE.SphereGeometry(0.17, 8, 6).translate(tx + Math.cos(a) * 0.2, h - 0.25, Math.sin(a) * 0.2)),
     ], [0.6, 1.05]);
     const cards = new Cards();

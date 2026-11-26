@@ -13,7 +13,7 @@ const QUALITY = 1.6;
 const NECK_TUCK = 0.07; // model metres
 const SWIM_LIFT = 0.5; // model metres: floats the prone swimmer up to the surface
 const EDGE_TIME = 1.1; // seconds to haul out of the water
-const WALK_REF = 2.6, RUN_REF = 5.4; // keep in step with physics WALK / RUN // grid coarsening for game-ready triangle counts
+const WALK_REF = 2.3, RUN_REF = 4.8; // keep in step with physics WALK / RUN // grid coarsening for game-ready triangle counts
 const DROP_K = 0.42 / 0.93; // (model units) action poses were authored for a 0.93 m hip height
 
 /* ================= spec: what the player chose ================= */
@@ -348,7 +348,7 @@ const RUN_ARM = {
 /* ================= mocap walk / run (Mixamo, retargeted by tools/mocap-convert.mjs) ================= */
 const NB = BONES.length;
 /** cartoon pacing: how much faster than real time a clip may play before the feet start to slide */
-const MAX_RATE = { walk: 1.8, run: 1.7 };
+const MAX_RATE = { walk: 1.3, run: 1.25 }; // unhurried steps: long strides, calm cadence
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
 /** pose at phase u (0..1) into out quats / out hip offset, wrapping smoothly */
 function sampleClip(c, u, outQ, outP) {

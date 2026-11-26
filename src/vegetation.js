@@ -88,7 +88,7 @@ const M = {
   snowBark: vegShader(Lm(0xffffff, { map: T.barkBrown }), { snow: 1 }),
   cact: vegShader(Lm(0x4f8a4a), { rim: true }),
   rock: vegShader(Lm(0x948f88)),
-  snowRock: vegShader(Lm(0x9a98a0), { snow: 1 }),
+  snowRock: vegShader(Lm(0xb4b2ba), { snow: 1 }),
   stone: vegShader(Lm(0xffffff)), // colours painted into the model
 };
 
