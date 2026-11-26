@@ -9,8 +9,6 @@ const HAT_C = { ballcap: 0x26282a, camp: 0xa07440, plaidcap: 0xffffff, mesh: 0xc
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const pickOf = (a) => a[(Math.random() * a.length) | 0];
 
-/** camera framing per tab: [target y (world), distance] */
-const FRAME = { face: [1.36, 1.9], hair: [1.38, 2.1], hat: [1.42, 2.2], top: [1.0, 2.6], bottom: [0.55, 2.4], shoes: [0.3, 1.7], acc: [0.9, 3.4] };
 
 export function createCreator({ renderer, hero, onDone }) {
   const $ = (id) => document.getElementById(id);
@@ -31,7 +29,7 @@ export function createCreator({ renderer, hero, onDone }) {
   const water = new THREE.Mesh(new THREE.CircleGeometry(1.3, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x3f8fb0, transparent: true, opacity: 0.6, depthWrite: false }));
   water.renderOrder = 2; water.visible = false; scene.add(water);
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 30);
-  const view = { yaw: 0.35, ty: FRAME.acc[0], dist: FRAME.acc[1], ty0: FRAME.acc[0], dist0: FRAME.acc[1] };
+  const view = { yaw: 0.35, ty: 0.86, dist: 5 };
 
   /* ---------- state ---------- */
   let spec = null, tab = 'face', accSel = null, active = false, motion = 'idle', mt = 0, prevParent = null;
@@ -90,7 +88,6 @@ export function createCreator({ renderer, hero, onDone }) {
       }
     }
     body.innerHTML = h;
-    const f = FRAME[tab]; view.ty0 = f[0]; view.dist0 = f[1];
   }
 
   function pick(f, v) {
@@ -171,7 +168,6 @@ export function createCreator({ renderer, hero, onDone }) {
     scene.add(hero.root);
     el.hidden = false; active = true; document.body.classList.add('creating');
     render();
-    view.ty = view.ty0; view.dist = view.dist0;
     rebuild();
   }
   function close() {
@@ -198,17 +194,20 @@ export function createCreator({ renderer, hero, onDone }) {
       hero.root.position.y = swim ? SWIM_Y : P.y;
       hero.root.rotation.y = 0;
 
-      // camera eases to the tab's framing
+      // camera eases to a full-body framing
       const k = Math.min(1, dt * 6);
-      view.ty += (view.ty0 - view.ty) * k; view.dist += (view.dist0 - view.dist) * k;
       const r = stage.getBoundingClientRect();
       const w = Math.max(1, r.width), h = Math.max(1, r.height);
       camera.aspect = w / h;
-      // keep the whole framed part visible on narrow screens
-      const fit = camera.aspect < 0.75 ? 0.75 / camera.aspect : 1;
-      const d = view.dist * Math.min(fit, 1.6) * (swim ? 1.35 : 1);
+      // always frame the whole body (hat to shoes), clear of the motion bar along the bottom
+      const tanV = Math.tan(camera.fov * Math.PI / 360), pad = Math.min(64, h * 0.18), use = (h - pad) / h;
+      const bodyH = swim ? 1.9 : 2.05, bodyW = swim ? 2.6 : 1.1;
+      const dFit = Math.max(bodyH / 2 / tanV / use, bodyW / 2 / (tanV * camera.aspect));
+      view.dist += (dFit - view.dist) * k;
+      const d = view.dist, seen = 2 * d * tanV;
+      view.ty = (swim ? 0.8 : 0.86) - (pad / 2 / h) * seen; // nudge up past the bar
       const oy = swim ? SWIM_Y + 0.5 : 0; // swimming sits low in the water
-      camera.position.set(Math.sin(view.yaw) * d, view.ty + oy + d * 0.12 + (swim ? 0.5 : 0), Math.cos(view.yaw) * d);
+      camera.position.set(Math.sin(view.yaw) * d, view.ty + oy + d * 0.12, Math.cos(view.yaw) * d);
       camera.lookAt(0, view.ty + oy, 0);
       camera.updateProjectionMatrix();
       renderer.setViewport(r.left, innerHeight - r.bottom, w, h);
