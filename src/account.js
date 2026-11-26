@@ -28,6 +28,10 @@ function displayName(user) {
 export function createAccount({ onReady }) {
   const loading = $('auLoading'), authBox = $('authBox'), playBox = $('playBox'), resetForm = $('auReset');
   const msg = (t) => { $('auMsg').textContent = t || ''; };
+  // the first screen is just two choices; the sign-in methods open on demand
+  const methods = (open) => { $('authChoice').hidden = open; $('authMethods').hidden = !open; msg(''); };
+  $('auOpen').addEventListener('click', () => methods(true));
+  $('auBack').addEventListener('click', () => methods(false));
   const show = (which) => {
     loading.hidden = which !== 'loading';
     authBox.hidden = which !== 'auth';
@@ -114,9 +118,10 @@ export function createAccount({ onReady }) {
 
   $('goGuest').addEventListener('click', () => enter(null));
   $('auOut').addEventListener('click', async () => {
-    if (store.mode === 'account') { await store.flush(); await supabase.auth.signOut(); }
-    readyFor = null; store.useGuest(); msg('');
-    show('auth');
+    const fromGuest = store.mode === 'guest'; // "Sign in instead": straight to the sign-in methods
+    if (!fromGuest) { await store.flush(); await supabase.auth.signOut(); }
+    readyFor = null; store.useGuest();
+    methods(fromGuest); show('auth');
   });
 
   // back from a password-reset email: ask for the new password before going in

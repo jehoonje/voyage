@@ -71,21 +71,26 @@
       </ul>
       <p id="auLoading" class="au-msg" role="status">Loading…</p>
 
-      <!-- not signed in: Google, Kakao or email, or a one-time guest run -->
+      <!-- not signed in: two choices first; the sign-in methods open on demand -->
       <div id="authBox" hidden>
-        <button class="sso google" id="auGoogle" type="button">Continue with Google</button>
-        <button class="sso kakao" id="auKakao" type="button">Continue with Kakao</button>
-        <div class="or"><span>or with email</span></div>
-        <form id="auForm" novalidate>
-          <input id="auEmail" type="email" autocomplete="email" inputmode="email" placeholder="Email" aria-label="Email" required>
-          <input id="auPass" type="password" autocomplete="current-password" placeholder="Password (at least 6 characters)" aria-label="Password" minlength="6" required>
-          <div class="au-row"><button class="go" id="auIn" type="submit">Sign in</button><button class="go ghost" id="auUp" type="button">Create account</button></div>
-        </form>
-        <button class="link" id="auForgot" type="button">Forgot password?</button>
+        <div id="authChoice">
+          <button class="go" id="auOpen" type="button">Sign in</button>
+          <button class="go ghost" id="goGuest" type="button">Play as guest</button>
+          <p class="au-note">Signed in, your progress is saved to your account. As a guest it's gone when you close the page.</p>
+        </div>
+        <div id="authMethods" hidden>
+          <button class="sso google" id="auGoogle" type="button">Continue with Google</button>
+          <button class="sso kakao" id="auKakao" type="button">Continue with Kakao</button>
+          <div class="or"><span>or with email</span></div>
+          <form id="auForm" novalidate>
+            <input id="auEmail" type="email" autocomplete="email" inputmode="email" placeholder="Email" aria-label="Email" required>
+            <input id="auPass" type="password" autocomplete="current-password" placeholder="Password (at least 6 characters)" aria-label="Password" minlength="6" required>
+            <div class="au-row"><button class="go" id="auIn" type="submit">Sign in</button><button class="go ghost" id="auUp" type="button">Create account</button></div>
+          </form>
+          <button class="link" id="auForgot" type="button">Forgot password?</button>
+          <button class="link" id="auBack" type="button">← Back</button>
+        </div>
         <p class="au-msg" id="auMsg" role="status" aria-live="polite"></p>
-        <div class="or"><span>or</span></div>
-        <button class="go ghost" id="goGuest" type="button">Play as guest</button>
-        <p class="au-note">A one-time session: your progress is gone when you close or reload the page.</p>
       </div>
 
       <!-- arrived from a password-reset email -->
