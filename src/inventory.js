@@ -1,4 +1,4 @@
-// 소지품: bag button with a count badge, a panel listing items, and a "+1" pickup flash.
+// Bag: bag button with a count badge, a panel listing items, and a "+1" pickup flash.
 import { CAMP_COST } from './actions.js';
 
 const ICON_WOOD = `<svg viewBox="0 0 40 40" aria-hidden="true">
@@ -9,8 +9,19 @@ const ICON_WOOD = `<svg viewBox="0 0 40 40" aria-hidden="true">
   <circle cx="29" cy="20" r="1.8" fill="#b98d55"/>
 </svg>`;
 
+/** a little fish icon in a species' colours */
+const fishIcon = (body, fin, eye = '#111') => `<svg viewBox="0 0 40 40" aria-hidden="true">
+  <path d="M6 20c5-8 15-10 22-4l6-5v18l-6-5c-7 6-17 4-22-4z" fill="${body}"/>
+  <path d="M15 12c3-3 8-3 10 0zM15 28c3 3 8 3 10 0z" fill="${fin}"/>
+  <circle cx="12" cy="18.5" r="1.8" fill="${eye}"/>
+</svg>`;
+
 export const ITEMS = {
   wood: { name: 'Wood', desc: `One piece for each tree you chop. Making camp takes ${CAMP_COST}.`, icon: ICON_WOOD },
+  fish_minnow: { name: 'Minnow', desc: 'A small fish of rivers and shallows.', icon: fishIcon('#c98fb0', '#b0789a') },
+  fish_clown: { name: 'Clownfish', desc: 'Orange with white bands; lives in the sea.', icon: fishIcon('#e8741c', '#f4f2ea') },
+  fish_tang: { name: 'Blue tang', desc: 'A bright blue reef fish with a yellow fin.', icon: fishIcon('#2f5fb0', '#f2c21a') },
+  fish_snapper: { name: 'Red snapper', desc: 'The big one. Rivers and sea.', icon: fishIcon('#d0503a', '#e89a3a') },
 };
 
 export function createInventory(progress) {

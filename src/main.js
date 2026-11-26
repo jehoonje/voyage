@@ -24,6 +24,7 @@ import { createPost } from './post.js';
 import { createWeather } from './weather.js';
 import { createAmbience } from './ambience.js';
 import { createFish } from './fish.js';
+import { createFishing } from './fishing.js';
 
 // Keep the authored (non-linear) colours looking as designed.
 THREE.ColorManagement.enabled = false;
@@ -104,6 +105,7 @@ const PITCH_MIN = -0.95, PITCH_MAX = 1.35, DIST_MIN = 2.2, DIST_MAX = 24;
 const map = createMap(progress, () => P);
 const inventory = createInventory(progress);
 const actions = createActions({ P, fires, fx, progress, onPickup: (t) => inventory.flash(t) });
+const fishing = createFishing({ scene, P, hero, progress, fx, onPickup: (t) => inventory.flash(t) });
 const input = createInput({
   onJump() { if (!actions.busy) physics.jump(P); },
   onMap: () => map.toggle(),
@@ -139,17 +141,24 @@ let ctxMode = '', nearTree = null, ctxTimer = 0;
 function refreshContext() {
   let mode = '', label = '';
   if (actions.sitting) { mode = 'douse'; label = 'Put out fire and stand'; }
+  else if (fishing.active) { mode = 'reel'; label = fishing.state === 'bite' ? 'Reel in!' : 'Reel in'; }
   else if (!actions.busy && !P.swim) {
     nearTree = world.nearestTree(P.x, P.z, 2.8);
-    if (nearTree) { mode = 'chop'; label = 'Chop tree'; }
+    if (fishing.canFish()) { mode = 'fish'; label = 'Fish'; } // facing open water from the bank (turn away to chop)
+    else if (nearTree) { mode = 'chop'; label = 'Chop tree'; }
   }
-  if (mode !== ctxMode) { ctxMode = mode; ctxBtn.hidden = !mode; ctxBtn.textContent = label; }
+  const lbl = mode + label;
+  if (lbl !== ctxMode) { ctxMode = lbl; ctxBtn.hidden = !mode; ctxBtn.textContent = label; ctxBtn.dataset.mode = mode; }
+  ctxBtn.classList.toggle('bite', fishing.state === 'bite');
   document.body.classList.toggle('busy', actions.busy);
   if (actions.busy) setMenu(false);
 }
 function doContext() {
-  if (ctxMode === 'douse') actions.endCamp();
-  else if (ctxMode === 'chop' && nearTree) actions.startChop(nearTree);
+  const mode = ctxBtn.dataset.mode;
+  if (mode === 'douse') actions.endCamp();
+  else if (mode === 'chop' && nearTree) actions.startChop(nearTree);
+  else if (mode === 'fish') fishing.start();
+  else if (mode === 'reel') fishing.reel();
   refreshContext();
 }
 function setMenu(open) { campMenu.hidden = !open; campBtn.setAttribute('aria-expanded', open); }
@@ -159,7 +168,7 @@ document.getElementById('pitchBtn').addEventListener('click', () => { setMenu(fa
 addEventListener('keydown', (e) => {
   if (!started) return;
   if (e.code === 'KeyE') doContext();
-  if (e.code === 'KeyC' && !actions.busy) { actions.startCamp(); refreshContext(); }
+  if (e.code === 'KeyC' && !actions.busy && !fishing.active) { actions.startCamp(); refreshContext(); }
 });
 
 function step(now) {
@@ -172,7 +181,8 @@ function step(now) {
   // movement relative to camera
   const inp = input.read();
   const actPose = actions.update(dt, now);
-  const frozen = actions.busy || hero.edging;
+  if (fishing.active && inp.mag > 0.35 && fishing.state !== 'show') fishing.cancel(); // walking off reels the line in
+  const frozen = actions.busy || hero.edging || fishing.active;
   let mag = frozen ? 0 : inp.mag;
   const fwdX = -Math.sin(cam.yaw), fwdZ = -Math.cos(cam.yaw), rgtX = Math.cos(cam.yaw), rgtZ = -Math.sin(cam.yaw);
   let mx = fwdX * -inp.y + rgtX * inp.x, mz = fwdZ * -inp.y + rgtZ * inp.x;
@@ -201,6 +211,7 @@ function step(now) {
   // animate from actual ground speed so inertia and slopes show in the stride
   const hs = Math.hypot(P.vx, P.vz);
   hero.animate(dt, P, hs, actPose);
+  fishing.update(dt);
 
   // third-person camera, kept above terrain
   // trees between hero and camera dissolve (see forestry.occlude)

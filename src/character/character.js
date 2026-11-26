@@ -435,6 +435,9 @@ export function createCharacter(scene) {
   const mk = () => Array.from({ length: NB }, () => new THREE.Quaternion());
   const walkQ = mk(), runQ = mk(), walkP = new THREE.Vector3(), runP = new THREE.Vector3(), swimQ = mk(), swimP = new THREE.Vector3();
   const E = MOCAP.edge, edgeEndY = E.p[(E.n - 1) * 3 + 1];
+  // a clip played on demand over everything else (fishing): name, time, loop, rate, and a fade weight
+  let ov = null, ovT = 0, ovLoop = false, ovRate = 1, ovW = 0, ovLast = null;
+  const ovQ = mk(), ovP = new THREE.Vector3(), handTmp = new THREE.Vector3();
   const sat = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const pos = (v) => (v > 0 ? v : 0);
 
@@ -446,6 +449,14 @@ export function createCharacter(scene) {
     get edging() { return edgeT >= 0; },
     /** play the grab-the-bank clip; drop = how far below the new ground the body started (world m) */
     edge(drop) { edgeT = 0; edgeDrop = Math.min(1.4, drop) / SCALE; },
+    /** play a mocap clip over the body (null stops it, fading back) */
+    play(name, { loop = false, rate = 1 } = {}) { ov = name; ovLast = name || ovLast; ovT = 0; ovLoop = loop; ovRate = rate; },
+    /** seconds into the clip that's playing */
+    get clipTime() { return ovT; },
+    /** has a one-shot clip reached its end */
+    get clipDone() { return !!ov && !ovLoop && ovT >= MOCAP[ov].duration; },
+    /** world position of a hand ('L' = the −x hand, which holds the top of a rod) */
+    hand(side, out = new THREE.Vector3()) { root.updateMatrixWorld(true); return J[side === 'L' ? 'handL' : 'handR'].getWorldPosition(out); },
     apply,
     /**
      * speed: actual ground speed (world m/s) so slopes and inertia show in the stride.
@@ -594,6 +605,18 @@ export function createCharacter(scene) {
           const rise = 1 - Math.pow(1 - Math.min(1, u / 0.8), 2);
           J.hips.position.y += (rest[0].y + (swimP.y - edgeEndY) * 0.6 - edgeDrop * (1 - rise) - J.hips.position.y) * ew;
         }
+      }
+      // on-demand clip (fishing) over everything else
+      ovW += ((ov ? 1 : 0) - ovW) * Math.min(1, dt * 6);
+      if (ov) ovT += dt * ovRate;
+      if (ovW > 0.001 && ovLast) {
+        const C = MOCAP[ovLast];
+        const u = ovLoop ? ovT / C.duration : Math.min(ovT / C.duration, (C.n - 1) / C.n);
+        sampleClip(C, u, ovQ, ovP);
+        for (let b = 0; b < NB; b++) bones[b].quaternion.slerp(ovQ[b], ovW);
+        J.hips.position.x += (rest[0].x + ovP.x - J.hips.position.x) * ovW;
+        J.hips.position.y += (rest[0].y + ovP.y - J.hips.position.y) * ovW;
+        J.hips.position.z += (rest[0].z - J.hips.position.z) * ovW;
       }
       axe.visible = !!(target && target.axe);
       // blink every few seconds
