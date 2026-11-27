@@ -26,7 +26,9 @@ export const SPECIES = {
   moonfin: { label: 'Moonfin', model: 'tang', tint: [0.62, 0.78, 1], glow: 0x1d3150, cm: [40, 80], xp: 80, rarity: 'Rare', where: { river: 7, sea: 5 }, when: ['night'], fight: 0.8, hint: 'Any water, only at night' },
   stormeel: { label: 'Storm eel', model: 'minnow', tint: [0.22, 0.36, 0.3], stretch: [0.6, 0.75, 2.4], cm: [60, 120], xp: 100, rarity: 'Rare', where: { sea: 9 }, weather: ['rain', 'storm'], fight: 0.95, hint: 'The sea in rain or storm' },
 };
-const ROD_LEN = 2.3, RELEASE_AT = 1.85, FLIGHT = 0.6;
+// the body: KayKit fishing clips (CC0) — Cast, Idle, Bite, Tug, Struggling (fight), Reeling, Catch;
+// the rod lies along the direction the clip's tool hand holds it
+const ROD_LEN = 2.3, RELEASE_AT = 1.12, FLIGHT = 0.6;
 const WAIT = [1.5, 4.5], STRIKE = 1.0;
 
 function fishMesh(sp) {
@@ -70,7 +72,8 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
   const meter = document.getElementById('fishMeter'), tensEl = document.getElementById('fmTension'), progEl = document.getElementById('fmProgress');
 
   let state = 'off', t = 0, biteAt = 0, nibbles = [], spot = null, catchName = null, catchCm = 0, water = 'sea', near = new Set();
-  let hold = false, pull = 0, tension = 0, snapT = 0, surge = 0, surgeT = 0, fightT = 0, big = false, pose = null;
+  let hold = false, pull = 0, tension = 0, snapT = 0, surge = 0, surgeT = 0, fightT = 0, big = false, pose = null, clip = null;
+  const anim = (name, loop = false, rate = 1) => { if (clip !== name) { clip = name; hero.play(name, { loop, rate }); } };
   const lo = new THREE.Vector3(), hi = new THREE.Vector3(), dir = new THREE.Vector3(), tip = new THREE.Vector3(), fp = new THREE.Vector3(), from = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
   const setState = (s) => { state = s; t = 0; onState && onState(s); };
@@ -117,15 +120,18 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
     rod.visible = float.visible = line.visible = false;
     for (const m of Object.values(caught)) m.visible = false;
     meter.hidden = true; hold = false; pose = null;
-    hero.play(null);
+    clip = null; hero.play(null);
   }
 
   function updateRod() {
-    hero.hand('R', lo); hero.hand('L', hi);
-    const fw = new THREE.Vector3(Math.sin(P.face), 0, Math.cos(P.face));
-    dir.copy(hi).sub(lo).normalize().multiplyScalar(1.2).addScaledVector(UP, 0.5).addScaledVector(fw, 0.35).normalize();
-    if (state === 'fight') dir.addScaledVector(fw, 0.5 + tension * 0.6).normalize(); // the rod bends toward the fish
-    rod.position.copy(lo).addScaledVector(dir, -0.25);
+    const fw = new THREE.Vector3(Math.sin(P.face), 0, Math.cos(P.face)), tl = hero.tool;
+    if (tl) { hero.hand(tl.side, lo); dir.copy(tl.dir); }
+    else { // between clips: along the hands, as before
+      hero.hand('R', lo); hero.hand('L', hi);
+      dir.copy(hi).sub(lo).normalize().multiplyScalar(1.2).addScaledVector(UP, 0.5).addScaledVector(fw, 0.35).normalize();
+    }
+    if (state === 'fight') dir.addScaledVector(fw, 0.3 + tension * 0.5).normalize(); // the rod bends toward the fish
+    rod.position.copy(lo).addScaledVector(dir, -0.2);
     rod.quaternion.setFromUnitVectors(UP, dir);
     tip.copy(rod.position).addScaledVector(dir, ROD_LEN);
   }
@@ -152,7 +158,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
     big = sp.rarity === 'Rare' || catchCm >= sp.cm[0] + (sp.cm[1] - sp.cm[0]) * 0.8 || catchCm >= 60;
     onCatch && onCatch({ species: catchName, cm: catchCm, big });
     setState(big ? 'trophy' : 'show');
-    if (big) { hero.play(null); rod.visible = float.visible = line.visible = false; }
+    if (big) { clip = null; hero.play(null); rod.visible = float.visible = line.visible = false; }
   }
 
   return {
@@ -173,7 +179,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
       P.vx = P.vz = 0;
       setState('cast');
       rod.visible = true;
-      hero.play('fishCast', { rate: 1.3 });
+      clip = null; anim('fishCast', false, 1.15);
       return true;
     },
     /** the action button: strike on a bite; during a nibble you spook it; otherwise wind in */
@@ -185,7 +191,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
         if (c.fight || catchCm >= 45) { // a fighter: hold to reel
           setState('fight'); pull = 0.08; tension = 0.25; snapT = 0; surge = 0; surgeT = 1 + Math.random(); fightT = 0;
           meter.hidden = false;
-          hero.play('fishReel', { rate: 1.6, loop: true });
+          anim('fishFight', true);
           if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
           return;
         }
@@ -198,7 +204,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
       } else return;
       setState('reel');
       from.copy(float.position);
-      hero.play('fishReel', { rate: 2.2 });
+      anim(catchName ? 'fishCatch' : 'fishReel', !catchName, catchName ? 2.2 : 1.5);
     },
     /** holding the button during a fight reels in */
     setHold(on) { hold = on; },
@@ -218,7 +224,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
           if (u >= 1) {
             fx.splash(spot.x, 0.05, spot.z, 5);
             setState('wait'); newWait();
-            hero.play('fishIdle', { loop: true });
+            anim('fishIdle', true);
           }
         }
       } else if (state === 'wait' || state === 'bite') {
@@ -226,8 +232,10 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
         if (state === 'wait') {
           for (const n of nibbles) { const d = t - n; if (d > 0 && d < 0.35) y -= 0.05 * Math.sin((d / 0.35) * Math.PI); }
           if (nibbles.some((n) => t - n > 0 && t - n < dt * 1.5)) fx.splash(spot.x, 0.04, spot.z, 1);
+          if (nibbles.some((n) => t - n > 0 && t - n < dt * 1.5)) anim('fishTug', false, 1.6);
+          else if (clip === 'fishTug' && hero.clipDone) anim('fishIdle', true);
           if (t > biteAt) {
-            setState('bite');
+            setState('bite'); anim('fishBite', false, 1.3);
             fx.splash(spot.x, 0.05, spot.z, 6);
             if (navigator.vibrate) navigator.vibrate(120);
           }
@@ -236,7 +244,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
           y -= 0.22 * Math.min(1, t * 6) * (0.7 + 0.3 * Math.sin(t * 14)); // pulled right under
           if (t > STRIKE + progress.perks.strike) {
             progress.toast('Fishing', 'It got away…', 'Strike when the float goes under');
-            setState('wait'); newWait();
+            setState('wait'); newWait(); anim('fishIdle', true);
           }
         }
         float.position.set(spot.x, y, spot.z);
@@ -249,6 +257,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
           surgeT = surge ? 0.5 + Math.random() * 0.8 : 1.2 + Math.random() * 1.8;
           if (surge) fx.splash(float.position.x, 0.05, float.position.z, 4);
         }
+        anim(hold && !surge ? 'fishReel' : 'fishFight', true, hold && !surge ? 1.3 : 1);
         if (hold) { pull += dt * 0.2 * (1 - surge * 0.6); tension += dt * (0.32 + surge * 1.0); }
         else { pull -= dt * (0.03 + surge * 0.08); tension -= dt * 0.75; }
         tension = Math.max(0, Math.min(1, tension)); pull = Math.max(0, Math.min(1, pull));
@@ -268,7 +277,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
           end(); return;
         }
         if (pull <= 0 && fightT > 5) { progress.toast('Fishing', 'It got away…', 'Hold to reel, let go when it pulls hard'); end(); return; }
-        if (pull >= 1) { meter.hidden = true; setState('reel'); from.copy(float.position); hero.play('fishReel', { rate: 2.2 }); }
+        if (pull >= 1) { meter.hidden = true; setState('reel'); from.copy(float.position); anim('fishCatch', false, 2.2); }
       } else if (state === 'reel') {
         const u = Math.min(1, t / 1.4), k = u * u * (3 - 2 * u);
         float.position.copy(from).lerp(tip, k);

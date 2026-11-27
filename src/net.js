@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { supabase } from './supabase.js';
 import { createCharacter, sanitize } from './character/character.js';
 import { DEFAULT_SPEC } from './character/parts.js';
-import { EMOTES, trophyPose, FIRE_SIT } from './emotes.js';
+import { EMOTES, trophyPose, createEmoteDriver } from './emotes.js';
 import { SPECIES } from './fishing.js';
 
 const CELL = 512, SEND_MOVING = 0.25, SEND_IDLE = 3, HELLO_EVERY = 10, FORGET_AFTER = 15, MAX_AVATARS = 12, DELAY = 0.22;
@@ -81,7 +81,7 @@ export function createNet({ scene, camera, local = false, onEvent }) {
   function peer(id) {
     let p = peers.get(id);
     if (!p) {
-      p = { id, name: 'Explorer', look: null, char: null, buf: [], heard: 0, st: {}, emote: null, emoteT: 0, trophy: 0, label: null, P: { x: 0, y: 0, z: 0, face: 0, grounded: true, swim: false, land: 0, vy: 0 }, fishing: false };
+      p = { id, name: 'Explorer', look: null, char: null, em: null, want: '', buf: [], heard: 0, trophy: 0, label: null, P: { x: 0, y: 0, z: 0, face: 0, grounded: true, swim: false, land: 0, vy: 0 } };
       p.label = document.createElement('div'); p.label.className = 'name'; p.label.textContent = p.name; p.label.hidden = true; labels.appendChild(p.label);
       peers.set(id, p);
     }
@@ -106,15 +106,15 @@ export function createNet({ scene, camera, local = false, onEvent }) {
       const look = cleanLook(m.l);
       if (look && JSON.stringify(look) !== JSON.stringify(p.look)) {
         p.look = look;
-        if (!p.char) { p.char = createCharacter(scene); p.char.root.visible = false; }
+        if (!p.char) { p.char = createCharacter(scene); p.char.root.visible = false; p.em = createEmoteDriver(p.char); }
         p.char.apply(look).catch(() => {});
       }
     } else if (m.t === 'who') {
       helloAt = Math.min(helloAt, now + 0.3); // answer soon (several askers share one reply)
     } else if (m.t === 'ev') {
       const e = m.e;
-      if (e === 'emote' && EMOTES[m.k]) { p.emote = m.k; p.emoteT = 0; }
-      else if (e === 'emote' && m.k === null) p.emote = null;
+      if (e === 'emote' && EMOTES[m.k]) { if (p.em) { p.em.play(m.k); p.want = 'emote'; } }
+      else if (e === 'emote' && m.k === null) { if (p.em) p.em.stop(); }
       else if (e === 'catch' && SPECIES[m.sp]) {
         const cm = Math.round(Math.max(1, Math.min(200, num(m.cm))));
         if (m.big) p.trophy = 0.001;
@@ -187,13 +187,13 @@ export function createNet({ scene, camera, local = false, onEvent }) {
         if (!vis) { p.label.hidden = true; continue; }
         const q = sampleAt(p, rt);
         Object.assign(p.P, { x: q.x, y: q.y, z: q.z, face: q.f, swim: q.sw, grounded: q.g });
-        // what the body is doing: a trophy, an emote, sitting, fishing, or walking about
-        let pose = null;
-        if (p.trophy > 0) { p.trophy += dt; pose = trophyPose(p.trophy); if (p.trophy > 2.8) p.trophy = 0; }
-        else if (p.emote && q.v < 0.3) { p.emoteT += dt; const e = EMOTES[p.emote]; pose = e.pose(p.emoteT); if (e.dur && p.emoteT > e.dur) p.emote = null; }
-        else if (q.si) pose = FIRE_SIT;
-        if (q.v >= 0.3) p.emote = null;
-        if (q.fi !== p.fishing) { p.fishing = q.fi; p.char.play(q.fi ? 'fishIdle' : null, { loop: true }); }
+        // what the body is doing: a trophy, an emote, sitting by a fire, fishing, or walking about
+        let pose = null, want;
+        if (q.v >= 0.3) p.em.stop();
+        if (p.trophy > 0) { p.trophy += dt; pose = trophyPose(p.trophy); want = '-'; if (p.trophy > 2.8) p.trophy = 0; }
+        else if (p.em.current) { pose = p.em.update(dt); want = 'emote'; }
+        else want = q.si ? 'sitIdle' : q.fi ? 'fishIdle' : '-';
+        if (want !== p.want) { p.want = want; if (want !== 'emote') p.char.play(want === '-' ? null : want, { loop: true }); }
         p.char.animate(dt, p.P, q.v, pose);
         // name tag (and what they just caught) above the head
         tmpV.set(q.x, q.y + 2.05, q.z).project(camera);
