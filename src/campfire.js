@@ -1,8 +1,10 @@
 // Campfires: stones + log teepee, flickering flames with a warm light and sparks.
-// Doused fires char, leave ash, linger, then fade away.
+// A camp outlives its fire: when it's put out (or burns down at its lit-until time) the logs char and
+// it stays as a cold camp, a place its owner can travel back to and light again. Fires from other
+// players come and go as they're loaded nearby.
 import * as THREE from 'three';
+import { serverNow } from './clock.js';
 
-const ASH_LINGER = 40, ASH_FADE = 20; // seconds
 const CHAR = new THREE.Color(0x2a2420);
 
 function facet(g) { g = g.toNonIndexed(); g.computeVertexNormals(); return g; }
@@ -50,7 +52,8 @@ export function createCampfires(scene, fx) {
   let night = 0;
   const glow = { x: 0, y: 0, z: 0, strength: 0 };
 
-  function spawn(x, y, z) {
+  /** meta: { id, owner, ownerName, mine, litUntil (server ms) }; instant: build at once (a loaded fire) */
+  function spawn(x, y, z, meta = {}, instant = false) {
     const g = new THREE.Group();
     g.position.set(x, y, z);
     const logMat = new THREE.MeshLambertMaterial({ color: 0x7a5532, transparent: true });
@@ -90,20 +93,46 @@ export function createCampfires(scene, fx) {
     stones.scale.setScalar(0.001);
     scene.add(g);
 
-    const f = { g, logs, stones, flames, logMat, stoneMat, ashMat, x, y, z, level: 0, target: 0, state: 'build', age: 0 };
+    const f = { g, logs, stones, flames, logMat, stoneMat, ashMat, x, y, z, level: 0, target: 0, state: 'build', age: 0, ...meta };
     fires.push(f);
+    if (instant) {
+      logs.scale.setScalar(1); stones.scale.setScalar(1);
+      if (f.litUntil > serverNow()) { f.state = 'burning'; f.target = 1; f.level = 0.6; }
+      else coldNow(f);
+    }
     return f;
   }
 
   function remove(f) {
+    if (!fires.includes(f)) return;
     scene.remove(f.g);
     f.logMat.dispose(); f.stoneMat.dispose(); f.ashMat.dispose();
     fires.splice(fires.indexOf(f), 1);
   }
+  /** a cold camp: charred logs, a ring of ash, no flame */
+  function coldNow(f) {
+    f.state = 'cold'; f.target = 0; f.level = 0;
+    f.logMat.color.copy(CHAR); f.ashMat.opacity = 0.9;
+  }
 
   return {
     spawn,
+    remove,
     glow,
+    get list() { return fires; },
+    /** nearest fire within r (optionally only lit ones) */
+    nearest(x, z, r, litOnly = false) {
+      let best = null, bd = r * r;
+      for (const f of fires) {
+        if (litOnly && !(f.state === 'burning' && f.target > 0)) continue;
+        const d = (f.x - x) ** 2 + (f.z - z) ** 2;
+        if (d < bd) { bd = d; best = f; }
+      }
+      return best;
+    },
+    isLit: (f) => f.state === 'burning' && f.target > 0,
+    /** light a cold camp again (until the given server time) */
+    relight(f, until) { f.litUntil = until; f.state = 'burning'; f.target = 1; f.logMat.color.setHex(0x7a5532); f.ashMat.opacity = 0; },
     colliders() { return fires.filter((f) => f.state !== 'ash').map((f) => ({ x: f.x, z: f.z, r: 0.6, top: f.y + 0.45 })); },
     /** 0 = day, 1 = night: at night the fire lights a wider area */
     setNight(n) { night = n; },
@@ -116,8 +145,8 @@ export function createCampfires(scene, fx) {
     /** a few sparks while striking */
     strike(f) { if (Math.random() < 0.5) emit(f, 0.5); },
     douse(f) {
-      if (f.state === 'dousing' || f.state === 'ash') return;
-      f.state = 'dousing'; f.target = 0; f.age = 0;
+      if (f.state === 'dousing' || f.state === 'cold') return;
+      f.state = 'dousing'; f.target = 0; f.age = 0; f.litUntil = serverNow();
       fx.smoke(f.x, f.y + 0.3, f.z, 10);
     },
     update(dt, now) {
@@ -132,20 +161,15 @@ export function createCampfires(scene, fx) {
           m.scale.set(s * w, s * (flick + 0.18 * Math.sin(now * 0.013 + i)), s * w);
           m.rotation.y += dt * (1 + i);
         });
+        if (f.state === 'burning' && f.litUntil && serverNow() > f.litUntil) { // burnt down
+          f.state = 'dousing'; f.target = 0; f.age = 0;
+        }
         if (f.state === 'dousing') {
           f.age += dt;
           const k = Math.min(1, f.age / 1.5);
           f.logMat.color.setHex(0x7a5532).lerp(CHAR, k);
           f.ashMat.opacity = 0.9 * k;
-          if (f.age > 2) { f.state = 'ash'; f.age = 0; }
-        } else if (f.state === 'ash') {
-          f.age += dt;
-          if (f.age > ASH_LINGER) {
-            const o = 1 - (f.age - ASH_LINGER) / ASH_FADE;
-            if (o <= 0) { remove(f); continue; }
-            f.logMat.opacity = f.stoneMat.opacity = o;
-            f.ashMat.opacity = 0.9 * o;
-          }
+          if (f.age > 2) coldNow(f);
         }
         if (f.level > 0.05 && (!lit || f.level > lit.level)) lit = f;
       }

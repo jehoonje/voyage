@@ -81,11 +81,16 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
 #campBtn[aria-expanded="true"]{background:rgba(240,178,74,.45);border-color:var(--amber)}
 #campMenu{right:calc(96px + env(safe-area-inset-right,0px));bottom:calc(112px + env(safe-area-inset-bottom,0px));
   background:var(--panel);border:1px solid var(--panel-line);border-radius:14px;padding:6px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-#pitchBtn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 16px;border:0;border-radius:10px;
-  background:rgba(240,178,74,.18);color:var(--ink);font-family:var(--ui);cursor:pointer;min-width:132px}
-#pitchBtn b{font-family:var(--display);font-size:16px}
-#pitchBtn small{font-size:11px;color:var(--ink-dim)}
-#pitchBtn:active{background:rgba(240,178,74,.4)}
+#emoteMenu{right:calc(96px + env(safe-area-inset-right,0px));bottom:calc(180px + env(safe-area-inset-bottom,0px));
+  background:var(--panel);border:1px solid var(--panel-line);border-radius:14px;padding:6px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.menu{display:grid;gap:6px}
+.menu[hidden]{display:none}
+.mi{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 16px;border:0;border-radius:10px;
+  background:rgba(240,178,74,.18);color:var(--ink);font-family:var(--ui);cursor:pointer;min-width:150px;text-align:left}
+.mi b{font-family:var(--display);font-size:16px}
+.mi small{font-size:11px;color:var(--ink-dim)}
+.mi:active{background:rgba(240,178,74,.4)}
+.mi:disabled{opacity:.45;cursor:default}
 #ctxBtn{left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom,0px));height:52px;padding:0 28px;border-radius:26px;
   border:1px solid rgba(255,220,160,.6);background:linear-gradient(180deg,rgba(240,178,74,.92),rgba(185,118,31,.92));
   color:#2a1a06;font-family:var(--display);font-size:17px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);white-space:nowrap}
@@ -103,13 +108,13 @@ body.busy #joy,body.busy #runBtn,body.busy #jumpBtn,body.busy #campBtn{opacity:.
 .bag-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .bag-head h2{margin:0;font-family:var(--display);font-size:18px}
 #bagClose{height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--panel-line);background:transparent;color:var(--ink);font-family:var(--ui);cursor:pointer}
-#bagList{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-#bagList li{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:8px;border-radius:10px;background:rgba(255,255,255,.06)}
-#bagList .ico svg{width:44px;height:44px;display:block}
-#bagList .txt{display:flex;flex-direction:column;gap:2px;min-width:0}
-#bagList .txt b{font-size:14px}
-#bagList .txt small{font-size:11px;color:var(--ink-dim);line-height:1.4}
-#bagList .num{font-family:var(--display);font-size:18px;color:var(--amber);font-variant-numeric:tabular-nums}
+#bag .rows{list-style:none;margin:0;padding:0;display:grid;gap:8px;max-height:min(52vh,420px);overflow-y:auto}
+#bag .rows li{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:8px;border-radius:10px;background:rgba(255,255,255,.06)}
+#bag .rows .ico svg{width:44px;height:44px;display:block}
+#bag .rows .txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+#bag .rows .txt b{font-size:14px}
+#bag .rows .txt small{font-size:11px;color:var(--ink-dim);line-height:1.4}
+#bag .rows .num{font-family:var(--display);font-size:18px;color:var(--amber);font-variant-numeric:tabular-nums}
 #bagEmpty{margin:4px 2px;font-size:12px;color:var(--ink-dim);line-height:1.5}
 #pickup{left:50%;bottom:calc(214px + env(safe-area-inset-bottom,0px));transform:translate(-50%,10px);opacity:0;pointer-events:none;
   padding:6px 14px;border-radius:16px;background:rgba(18,24,28,.7);border:1px solid var(--panel-line);font-size:14px;white-space:nowrap}
@@ -197,3 +202,55 @@ body.creating .hud{display:none!important}
 /* while the start card is up the game controls stay out of the way; the controls list waits for the play step */
 body:has(#start:not([hidden])) .hud:not(#toast){visibility:hidden}
 .card:has(#playBox[hidden]) ul{display:none}
+
+/* bag tabs: items, field guide (fish caught, records), terrain perks */
+#bag .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin:0 0 10px;padding:3px;border-radius:10px;background:rgba(255,255,255,.06)}
+#bag .tabs button{height:32px;border:0;border-radius:8px;background:transparent;color:var(--ink-dim);font-family:var(--ui);font-size:13px;cursor:pointer}
+#bag .tabs button[aria-selected="true"]{background:rgba(255,255,255,.14);color:var(--ink)}
+#bag .slots{margin:0 2px 8px;font-size:12px;color:var(--ink-dim)}
+#bag .rows li.locked{opacity:.55}
+#bag .rows li.locked .ico svg{filter:brightness(0) opacity(.45)}
+#bag .rows .num small{display:block;font-family:var(--ui);font-size:10px;color:var(--ink-dim);text-align:right}
+#bag .rows .tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:6px;font-size:10px;font-weight:600;vertical-align:1px;background:rgba(255,255,255,.12);color:var(--ink-dim)}
+#bag .rows .tag.rare{background:#e8b15a;color:#2a1a06}
+#bag .rows .tag.now{background:#3f8fc4;color:#fff}
+#bag .rows .use{height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--panel-line);background:transparent;color:var(--ink);font-family:var(--ui);font-size:12px;cursor:pointer}
+
+/* emotes, other players' name tags, the fight meter, sign dialog, buffs, travel fade */
+#emoteBtn{right:calc(28px + env(safe-area-inset-right,0px));bottom:calc(182px + env(safe-area-inset-bottom,0px));width:58px;height:58px;font-size:13px}
+#emoteBtn[aria-expanded="true"]{background:rgba(240,178,74,.45);border-color:var(--amber)}
+body.busy #emoteBtn{opacity:.22;pointer-events:none}
+#names{inset:0;pointer-events:none;overflow:hidden}
+#names .name{position:absolute;left:0;top:0;padding:2px 8px;border-radius:9px;background:rgba(12,16,18,.55);color:#f3ead6;font-size:12px;white-space:nowrap;will-change:transform}
+#names .name.say{background:rgba(232,177,90,.92);color:#2a1a06;font-weight:600}
+#online{top:calc(64px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);padding:3px 10px;border-radius:10px;background:rgba(12,16,18,.5);font-size:12px;color:var(--ink)}
+#placeFirst{display:block;font-size:11px;color:var(--amber)}
+#buffs{top:calc(92px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:4px;pointer-events:none}
+#buffs span{align-self:flex-start;padding:3px 9px;border-radius:9px;background:rgba(232,177,90,.85);color:#2a1a06;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+#fishMeter{left:50%;transform:translateX(-50%);bottom:calc(214px + env(safe-area-inset-bottom,0px));width:min(300px,calc(100vw - 40px));
+  padding:10px 12px;border-radius:12px;background:rgba(18,24,28,.82);border:1px solid var(--panel-line)}
+#fishMeter .fm-row{display:grid;grid-template-columns:38px 1fr;align-items:center;gap:8px;margin:3px 0;font-size:12px;color:var(--ink-dim)}
+#fishMeter .fm-bar{height:10px;border-radius:5px;background:rgba(255,255,255,.12);overflow:hidden;position:relative}
+#fishMeter .fm-bar::after{content:"";position:absolute;right:0;top:0;bottom:0;width:20%;background:rgba(220,70,50,.25)}
+#fishMeter .fm-bar.prog::after{display:none}
+#fishMeter i{display:block;height:100%;width:0;background:#7cc27a;border-radius:5px}
+#fishMeter i.hot{background:#e0503a}
+#fishMeter .prog i{background:#e8b15a}
+#fishMeter p{margin:6px 0 0;font-size:11px;color:var(--ink-dim);text-align:center}
+#fishMeter.surge{box-shadow:0 0 0 2px rgba(224,80,58,.7)}
+body.fight #ctxBtn{animation:none}
+.dlg{left:50%;top:38%;transform:translate(-50%,-50%);width:min(340px,calc(100vw - 32px));padding:14px;border-radius:14px;
+  background:rgba(18,24,28,.94);border:1px solid var(--panel-line);display:grid;gap:10px}
+.dlg[hidden]{display:none}
+.dlg label{display:flex;flex-direction:column;gap:2px}
+.dlg label b{font-family:var(--display);font-size:17px}
+.dlg label small{font-size:12px;color:var(--ink-dim)}
+.dlg input{height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--panel-line);background:rgba(10,14,16,.6);color:var(--ink);font-size:16px;-webkit-user-select:text;user-select:text}
+.dlg-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dlg-row button{height:42px;border-radius:10px;border:1px solid var(--panel-line);background:transparent;color:var(--ink);font-family:var(--ui);font-size:15px;cursor:pointer}
+.dlg-row .ok{background:linear-gradient(180deg,#f0b24a,#b9761f);color:#2a1a06;border:0}
+#fade{position:fixed;inset:0;background:#0c1012;opacity:0;pointer-events:none;transition:opacity .45s;z-index:40}
+#fade.on{opacity:1}
+.cr-name{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:13px;color:var(--ink-dim)}
+.cr-name input{flex:1;min-width:0;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--panel-line);background:rgba(10,14,16,.55);color:var(--ink);font-size:16px;-webkit-user-select:text;user-select:text}
+#bag,#map,.dlg{z-index:25}

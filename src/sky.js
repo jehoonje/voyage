@@ -338,6 +338,8 @@ export function createEnvironment(scene, startTime = 0.3) {
     light,
     get time() { return time; },
     set time(t) { time = ((t % 1) + 1) % 1; apply(null); },
+    /** keep in step with the shared world clock without an extra lighting pass */
+    follow(t) { time = ((t % 1) + 1) % 1; },
     /** in-game clock, e.g. "오전 9:40" */
     clock() {
       const mins = Math.floor(time * 24 * 60), h = Math.floor(mins / 60) % 24, m = mins % 60;

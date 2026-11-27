@@ -21,7 +21,10 @@
     <div class="bar"><i id="xpbar"></i></div>
     <div class="row sub"><span id="xptxt">0 / 100 XP</span><span id="clock">7:12 AM</span></div>
   </div>
-  <div id="place" class="hud"><b id="placeName">—</b><small id="placeBiome"></small></div>
+  <div id="place" class="hud"><b id="placeName">—</b><small id="placeBiome"></small><small id="placeFirst" hidden></small></div>
+  <div id="buffs" class="hud" aria-live="polite"></div>
+  <div id="names" class="hud" aria-hidden="true"></div>
+  <div id="online" class="hud" hidden></div>
   <button id="mapBtn" class="hud" aria-label="Open map">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg>
   </button>
@@ -31,19 +34,45 @@
   </button>
   <div id="bag" class="hud" role="dialog" aria-labelledby="bagTitle" hidden>
     <div class="bag-head"><h2 id="bagTitle">Bag</h2><button id="bagClose">Close</button></div>
-    <ul id="bagList"></ul>
-    <p id="bagEmpty">Nothing here yet. Stand by a tree and chop it.</p>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabBag" aria-selected="true" data-tab="bag">Bag</button>
+      <button role="tab" id="tabFish" aria-selected="false" data-tab="fish">Field guide</button>
+      <button role="tab" id="tabLand" aria-selected="false" data-tab="land">Terrain</button>
+    </div>
+    <div id="paneBag" role="tabpanel">
+      <p class="slots" id="bagSlots"></p>
+      <ul id="bagList" class="rows"></ul>
+      <p id="bagEmpty">Nothing here yet. Stand by a tree and chop it.</p>
+    </div>
+    <div id="paneFish" role="tabpanel" hidden><p class="slots" id="fishCount"></p><ul id="fishList" class="rows"></ul></div>
+    <div id="paneLand" role="tabpanel" hidden><p class="slots" id="landCount"></p><ul id="landList" class="rows"></ul></div>
   </div>
   <div id="pickup" class="hud" aria-live="polite"></div>
   <div id="toast" class="hud"><div class="k" id="toastK"></div><div class="t" id="toastT"></div><div class="x" id="toastX"></div></div>
   <div id="joy" class="hud"><div id="knob"></div></div>
   <button id="runBtn" class="hud act-btn" aria-pressed="false">Run</button>
   <button id="jumpBtn" class="hud act-btn">Jump</button>
-  <button id="campBtn" class="hud act-btn" aria-expanded="false" aria-controls="campMenu">Camp</button>
-  <div id="campMenu" class="hud" hidden>
-    <button id="pitchBtn"><b>Make camp</b><small>Light a campfire</small></button>
+  <button id="campBtn" class="hud act-btn" aria-expanded="false" aria-controls="campMenu">Make</button>
+  <div id="campMenu" class="hud menu" hidden></div>
+  <button id="emoteBtn" class="hud act-btn" aria-expanded="false" aria-controls="emoteMenu">Emote</button>
+  <div id="emoteMenu" class="hud menu" hidden>
+    <button class="mi" data-emote="wave"><b>Wave</b><small>key 1</small></button>
+    <button class="mi" data-emote="cheer"><b>Cheer</b><small>key 2</small></button>
+    <button class="mi" data-emote="sit"><b>Sit</b><small>key 3</small></button>
+    <button class="mi" data-emote="clap"><b>Clap</b><small>key 4</small></button>
+  </div>
+  <div id="fishMeter" class="hud" hidden>
+    <div class="fm-row"><span>Line</span><div class="fm-bar"><i id="fmTension"></i></div></div>
+    <div class="fm-row"><span>Reel</span><div class="fm-bar prog"><i id="fmProgress"></i></div></div>
+    <p>Hold to reel · let go when the line goes red</p>
   </div>
   <button id="ctxBtn" class="hud" hidden></button>
+  <form id="signDlg" class="hud dlg" hidden>
+    <label for="signText"><b>Put up a sign</b><small>Everyone who passes can read it (40 characters)</small></label>
+    <input id="signText" maxlength="40" autocomplete="off" placeholder="e.g. Moonfins bite here at night">
+    <div class="dlg-row"><button type="button" id="signCancel">Cancel</button><button type="submit" class="ok">Put it up</button></div>
+  </form>
+  <div id="fade" aria-hidden="true"></div>
 
   <div id="map" hidden>
     <canvas id="mapCv"></canvas>
@@ -120,7 +149,10 @@
       <div class="cr-head"><h2>Create your character</h2><button id="crRandom">Random</button></div>
       <div id="crTabs" role="tablist" aria-label="Part to style"></div>
       <div id="crBody"></div>
-      <div class="cr-foot"><button class="go" id="crDone">Set off like this</button></div>
+      <div class="cr-foot">
+        <label class="cr-name" for="crName">Name others see <input id="crName" maxlength="16" autocomplete="nickname" placeholder="Explorer"></label>
+        <button class="go" id="crDone">Set off like this</button>
+      </div>
     </div>
   </div>
 

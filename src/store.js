@@ -30,6 +30,8 @@ async function flush() {
 
 export const store = {
   get mode() { return mode; },
+  /** the signed-in player's id (null for a guest) */
+  get uid() { return uid; },
   get(key) {
     if (mode === 'guest') return mem.has(key) ? mem.get(key) : null;
     return row[FIELD[key]] ?? null;

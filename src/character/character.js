@@ -459,6 +459,8 @@ export function createCharacter(scene) {
     /** world position of a hand ('L' = the −x hand, which holds the top of a rod) */
     hand(side, out = new THREE.Vector3()) { root.updateMatrixWorld(true); return J[side === 'L' ? 'handL' : 'handR'].getWorldPosition(out); },
     apply,
+    /** take this character out of the world (other players who leave) */
+    dispose() { scene.remove(root); for (const m of meshes) m.material.dispose(); meshes = []; outlines = []; },
     /**
      * speed: actual ground speed (world m/s) so slopes and inertia show in the stride.
      * target: action pose or null for locomotion.

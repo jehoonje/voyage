@@ -84,6 +84,7 @@ export function createInput({ onJump, onMap, onLook, onZoom }) {
   touch.addEventListener('wheel', (e) => { e.preventDefault(); onZoom(e.deltaY * (e.deltaMode === 1 ? 30 : 1)); }, { passive: false });
 
   addEventListener('keydown', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return; // typing a sign or a name
     keys[e.code] = true;
     if (e.code === 'Space') { onJump(); e.preventDefault(); }
     if (e.code === 'KeyM') onMap();

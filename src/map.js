@@ -6,11 +6,15 @@ import { CELL } from './progress.js';
 const LEGEND = [['Forest', '#527f3a'], ['Jungle', '#30702b'], ['Meadow', '#94bf59'], ['Desert', '#e3b570'],
   ['Beach', '#e8d499'], ['Mountain', '#80766b'], ['Snowy peak', '#f2f4f7'], ['Water', '#3f8fc4']];
 
-export function createMap(progress, getPlayer) {
+/**
+ * extra: getCamps() → your camps [{ x, z, lit }], getSigns() → nearby signs, placeNote() → text about where you are,
+ * onTravel(camp) → travel there (only offered while sitting at a fire, via openTravel)
+ */
+export function createMap(progress, getPlayer, extra = {}) {
   const $ = (id) => document.getElementById(id);
   const el = $('map'), cv = $('mapCv'), ctx = cv.getContext('2d');
   const st = progress.state;
-  let open = false, zoom = 6, cx = 0, cz = 0, raf = 0;
+  let open = false, zoom = 6, cx = 0, cz = 0, raf = 0, travel = false, moved = 0;
   const colors = new Map(), tmp = [0, 0, 0];
 
   $('legend').innerHTML = LEGEND.map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join('');
@@ -47,6 +51,22 @@ export function createMap(progress, getPlayer) {
         ctx.fillRect(w / 2 + (i - cx) * zoom, sy, zoom + 0.6, zoom + 0.6);
       }
     }
+    const toScreen = (x, z) => [w / 2 + (x / CELL - cx) * zoom, h / 2 + (z / CELL - cz) * zoom];
+    // signs: small posts
+    for (const sg of (extra.getSigns ? extra.getSigns() : [])) {
+      const [sx, sy] = toScreen(sg.x, sg.z);
+      ctx.fillStyle = '#a77a4a'; ctx.strokeStyle = '#2a1a06'; ctx.lineWidth = 1.5;
+      ctx.fillRect(sx - 5, sy - 9, 10, 6); ctx.strokeRect(sx - 5, sy - 9, 10, 6);
+      ctx.beginPath(); ctx.moveTo(sx, sy - 3); ctx.lineTo(sx, sy + 3); ctx.stroke();
+    }
+    // your camps: flames (lit) or rings (cold); bigger in travel mode
+    for (const c of (extra.getCamps ? extra.getCamps() : [])) {
+      const [sx, sy] = toScreen(c.x, c.z), r = travel ? 11 : 7;
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fillStyle = c.lit ? '#f07a2a' : '#5a514a'; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = travel ? '#f3ead6' : '#2a1a06'; ctx.stroke();
+      if (c.lit) { ctx.beginPath(); ctx.moveTo(sx, sy - r * 0.7); ctx.quadraticCurveTo(sx + r * 0.5, sy, sx, sy + r * 0.45); ctx.quadraticCurveTo(sx - r * 0.5, sy, sx, sy - r * 0.7); ctx.fillStyle = '#ffd870'; ctx.fill(); }
+    }
     const p = getPlayer();
     const px = w / 2 + (p.x / CELL - cx) * zoom, py = h / 2 + (p.z / CELL - cz) * zoom;
     ctx.save();
@@ -57,7 +77,9 @@ export function createMap(progress, getPlayer) {
     ctx.fillStyle = '#f0b24a'; ctx.strokeStyle = '#2a1a06'; ctx.lineWidth = 2;
     ctx.fill(); ctx.stroke();
     ctx.restore();
-    $('mapStat').textContent = `Revealed ${progress.areaKm2().toFixed(2)} km² · ${st.regions.size} regions found · ${st.biomes.size}/9 terrains`;
+    const note = extra.placeNote ? extra.placeNote() : '';
+    $('mapStat').textContent = travel ? 'Tap one of your camps to travel there'
+      : `Revealed ${progress.areaKm2().toFixed(2)} km² · ${st.regions.size} regions found · ${st.biomes.size}/9 terrains` + (note ? ' · ' + note : '');
   }
   const request = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
   const center = () => { const p = getPlayer(); cx = p.x / CELL; cz = p.z / CELL; };
@@ -65,7 +87,17 @@ export function createMap(progress, getPlayer) {
   function toggle() {
     open = !open;
     el.hidden = !open;
+    if (!open) travel = false;
     if (open) { center(); request(); }
+  }
+  /** open the map to pick a camp to travel to (zoomed out to show them all) */
+  function openTravel() {
+    travel = true;
+    const camps = extra.getCamps ? extra.getCamps() : [], p = getPlayer();
+    let far = 0; for (const c of camps) far = Math.max(far, Math.abs(c.x - p.x), Math.abs(c.z - p.z));
+    if (!open) toggle();
+    zoom = clamp((Math.min(cv.clientWidth, cv.clientHeight) * 0.42) / Math.max(4, far / CELL), 1.5, 12);
+    request();
   }
   $('closeMap').addEventListener('click', toggle);
   $('zin').addEventListener('click', () => { zoom = Math.min(24, zoom * 1.5); request(); });
@@ -73,11 +105,12 @@ export function createMap(progress, getPlayer) {
   $('zme').addEventListener('click', () => { center(); request(); });
 
   const ptrs = new Map();
-  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); });
+  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved = 0; });
   cv.addEventListener('pointermove', (e) => {
     if (!ptrs.has(e.pointerId)) return;
     const p = ptrs.get(e.pointerId);
     if (ptrs.size === 1) {
+      moved += Math.abs(e.clientX - p[0]) + Math.abs(e.clientY - p[1]);
       cx -= (e.clientX - p[0]) / zoom; cz -= (e.clientY - p[1]) / zoom;
     } else {
       const o = [...ptrs.entries()].find(([k]) => k !== e.pointerId)[1];
@@ -87,11 +120,23 @@ export function createMap(progress, getPlayer) {
     ptrs.set(e.pointerId, [e.clientX, e.clientY]);
     request();
   });
-  const up = (e) => ptrs.delete(e.pointerId);
+  const up = (e) => {
+    const tap = ptrs.size === 1 && moved < 8 && e.type === 'pointerup';
+    ptrs.delete(e.pointerId);
+    if (!tap || !travel || !extra.onTravel) return;
+    // a tap in travel mode: the camp under the finger
+    const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, w = cv.clientWidth, h = cv.clientHeight;
+    let best = null, bd = 22 * 22;
+    for (const c of (extra.getCamps ? extra.getCamps() : [])) {
+      const sx = w / 2 + (c.x / CELL - cx) * zoom, sy = h / 2 + (c.z / CELL - cz) * zoom, d = (sx - mx) ** 2 + (sy - my) ** 2;
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (best) { toggle(); extra.onTravel(best); }
+  };
   cv.addEventListener('pointerup', up);
   cv.addEventListener('pointercancel', up);
   cv.addEventListener('wheel', (e) => { zoom = clamp(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), 1.5, 24); request(); }, { passive: true });
   addEventListener('resize', () => { if (open) request(); });
 
-  return { toggle, request, get open() { return open; } };
+  return { toggle, openTravel, request, get open() { return open; } };
 }
