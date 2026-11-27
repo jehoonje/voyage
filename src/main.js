@@ -120,7 +120,7 @@ const net = createNet({ scene, camera, local: NET_LOCAL, onEvent: netEvent });
 if (NET_LOCAL) window.__net = net; // testing aid
 // bot explorers wandering about (?bots=N to change how many, 0 for none)
 const bots = createBots({ scene, camera, world, count: DEBUG.has('bots') ? Math.max(0, Math.min(12, parseInt(DEBUG.get('bots'), 10) || 0)) : 5 });
-if (NET_LOCAL) setTimeout(() => { window.__bots = bots.list; window.__g = { fishing, fires, progress, actions, P }; }); // testing aid
+if (NET_LOCAL) setTimeout(() => { window.__bots = bots.list; window.__botsApi = bots; window.__g = { fishing, fires, progress, actions, P }; }); // testing aid
 let myCamps = []; // { id, x, y, z, litUntil } — your camps, for travelling between them
 let placeFirst = null;
 const myName = () => progress.state.name || 'Explorer';
@@ -308,6 +308,7 @@ async function campChanged(f, what) {
     wdb.setLit(f.id, f.litUntil);
     const c = myCamps.find((m) => m.id === f.id); if (c) c.litUntil = f.litUntil;
   }
+  if (what === 'made' || what === 'relit') bots.onFire(f, P, (q) => fires.isLit(q));
   if (what === 'doused') net.event('fireOut', { id: f.id });
   else net.event('fire', { id: f.id, x: f.x, z: f.z, lu: f.litUntil });
 }

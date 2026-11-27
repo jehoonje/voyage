@@ -1,19 +1,31 @@
 // Bot explorers: a handful of computer-run hikers that wander the land around you, so the world
-// never feels empty. Each has a random look and name (tagged BOT), and a simple routine: walk
-// somewhere (now and then at a run), look around, stop for an emote, sit down for a rest, and turn
-// to wave when you come close or wave at them. They stay on land and step around trees.
+// never feels empty. Each time one appears it gets a fresh random name, and it follows a simple
+// routine: walk somewhere (now and then at a run), look around, stop for an emote, sit down for a
+// rest, and turn to wave when you come close or wave at them. When you light a fire, one or two of
+// them may wander over and sit with you. They stay on land and step around trees.
 // Bots are local to each player (nobody else sees yours), and they're not counted as players nearby.
 import * as THREE from 'three';
 import { sample } from './world.js';
 import { createCharacter, sanitize } from './character/character.js';
 import { SKIN_TONES, HAIR_COLORS, IRIS_COLORS, GEAR_COLORS, EYES, HAIR, HATS, TOPS, BOTTOMS, SHOES } from './character/parts.js';
-import { EMOTES } from './emotes.js';
+import { EMOTES, FIRE_SIT } from './emotes.js';
 import { WALK, RUN } from './physics.js';
 
-const NAMES = ['Mina', 'Theo', 'Juno', 'Haru', 'Sol', 'Ari', 'Noa', 'Kai', 'Yuna', 'Leo', 'Rin', 'Eli', 'Dami', 'Sora', 'Ivy', 'Bao', 'Lumi', 'Oto', 'Remy', 'Nami'];
+// names are made up fresh each time: syllable names, or the "Explorer 1234" a player gets by default
+const ONSET = ['', 'b', 'd', 'h', 'j', 'k', 'l', 'm', 'n', 'r', 's', 't', 'v', 'y', 'ch', 'th', 'sh'];
+const VOWEL = ['a', 'e', 'i', 'o', 'u', 'a', 'o', 'ai', 'ei', 'ou'];
+const CODA = ['', '', '', 'n', 'l', 'r', 's', 'm'];
 const SPAWN = [12, 50], KEEP = 260, SHOW = 110, GREET = 7;
 
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
+function randomName() {
+  if (Math.random() < 0.2) return 'Explorer ' + (1000 + Math.floor(Math.random() * 9000));
+  let n = '';
+  const syl = 2 + (Math.random() < 0.3 ? 1 : 0);
+  for (let i = 0; i < syl; i++) n += pick(ONSET) + pick(VOWEL) + (i === syl - 1 ? pick(CODA) : '');
+  n = n.slice(0, 9);
+  return n[0].toUpperCase() + n.slice(1);
+}
 const keys = (o) => Object.keys(o);
 const chance = (p) => Math.random() < p;
 
@@ -55,7 +67,8 @@ export function createBots({ scene, camera, world, count = 5 }) {
       const x = px + Math.cos(a) * r, z = pz + Math.sin(a) * r;
       if (!walkable(x, z) || world.nearestTree(x, z, 1.2)) continue;
       b.P.x = x; b.P.z = z; b.P.y = sample(x, z).h; b.P.face = Math.random() * Math.PI * 2;
-      b.state = 'idle'; b.t = 1 + Math.random() * 3; b.speed = 0;
+      b.state = 'idle'; b.t = 1 + Math.random() * 3; b.speed = 0; b.fire = null;
+      b.name = randomName(); b.label.textContent = b.name; // someone new each time a bot (re)appears
       return true;
     }
     return false;
@@ -65,13 +78,10 @@ export function createBots({ scene, camera, world, count = 5 }) {
     const char = createCharacter(scene);
     char.root.visible = false;
     char.apply(randomLook()).catch(() => {});
-    const name = pick(NAMES.filter((n) => !bots.some((b) => b.name === n)));
     const label = document.createElement('div');
-    label.className = 'name bot'; label.hidden = true;
-    label.innerHTML = '<span></span><i>BOT</i>';
-    label.firstChild.textContent = name;
+    label.className = 'name'; label.hidden = true;
     labels.appendChild(label);
-    const b = { char, name, label, P: { x: 0, y: 0, z: 0, face: 0, grounded: true, swim: false, land: 0, vy: 0 },
+    const b = { char, name: randomName(), label, fire: null, seat: null, P: { x: 0, y: 0, z: 0, face: 0, grounded: true, swim: false, land: 0, vy: 0 },
       state: 'idle', t: 0, tx: 0, tz: 0, speed: 0, run: false, emote: null, emoteT: 0, greeted: -99, sitFor: 0 };
     place(b, px, pz);
     bots.push(b);
@@ -104,6 +114,22 @@ export function createBots({ scene, camera, world, count = 5 }) {
 
   return {
     get list() { return bots; },
+    /**
+     * you lit a fire: maybe one or two bots nearby come and sit with you
+     * (half the time one, a quarter of the time two, otherwise nobody)
+     */
+    onFire(f, P, isLit) {
+      const r = Math.random(), want = r < 0.5 ? 1 : r < 0.75 ? 2 : 0;
+      const free = bots.filter((b) => !b.fire && Math.hypot(b.P.x - f.x, b.P.z - f.z) < 90)
+        .sort((a, b) => Math.hypot(a.P.x - f.x, a.P.z - f.z) - Math.hypot(b.P.x - f.x, b.P.z - f.z));
+      const a0 = Math.atan2(P.x - f.x, P.z - f.z); // your seat; theirs are round the ring from it
+      free.slice(0, want).forEach((b, i) => {
+        const a = a0 + (i === 0 ? 2.1 : -2.1) + (Math.random() - 0.5) * 0.4;
+        b.fire = f; b.isLit = isLit; b.seat = { x: f.x + Math.sin(a) * 1.4, z: f.z + Math.cos(a) * 1.4 };
+        b.state = 'toFire'; b.t = 4 + Math.random() * 8 + i * 4; // a little while before they notice
+        b.emote = null;
+      });
+    },
     start(P) {
       if (started) return;
       started = true;
@@ -122,14 +148,33 @@ export function createBots({ scene, camera, world, count = 5 }) {
       const w = innerWidth, h = innerHeight;
       for (const b of bots) {
         const dp = Math.hypot(b.P.x - P.x, b.P.z - P.z);
-        if (dp > KEEP) { place(b, P.x, P.z); continue; } // left far behind: wander back in from somewhere else
+        if (dp > KEEP && !b.fire) { place(b, P.x, P.z); continue; } // left far behind: wander back in from somewhere else
         b.t -= dt;
         let pose = null, speed = 0;
         // you came close: turn and wave (once in a while, not every time)
-        if (dp < GREET && b.state !== 'emote' && b.state !== 'greet' && performance.now() / 1000 - b.greeted > 40) {
+        if (dp < GREET && !b.fire && b.state !== 'emote' && b.state !== 'greet' && performance.now() / 1000 - b.greeted > 40) {
           b.greeted = performance.now() / 1000; b.state = 'greet'; b.t = 0.5; b.reply = 'wave';
         }
-        if (b.state === 'walk') {
+        if (b.fire && !b.isLit(b.fire) && b.state !== 'toFire') { b.fire = null; next(b); } // the fire's out: get up and go
+        if (b.state === 'toFire') {
+          if (!b.isLit(b.fire)) { b.fire = null; next(b); }
+          else if (b.t <= 0) { // on the way: walk (run if it's far), straight to the seat
+            const dx = b.seat.x - b.P.x, dz = b.seat.z - b.P.z, dist = Math.hypot(dx, dz);
+            turnTo(b, b.seat.x, b.seat.z, dt);
+            speed = (dist > 20 ? RUN : WALK) * 0.9;
+            const ax = b.P.x + Math.sin(b.P.face) * 1.2, az = b.P.z + Math.cos(b.P.face) * 1.2;
+            if (sample(ax, az).h < 0.1 && dist > 2) { b.fire = null; b.state = 'idle'; b.t = 1; speed = 0; } // water in the way: give up
+            else { b.P.x += Math.sin(b.P.face) * speed * dt; b.P.z += Math.cos(b.P.face) * speed * dt; }
+            if (dist < 0.25 + speed * dt) { b.P.x = b.seat.x; b.P.z = b.seat.z; b.state = 'fireSit'; b.sitT = 0; b.t = 60 + Math.random() * 150; speed = 0; }
+          }
+        } else if (b.state === 'fireSit') {
+          b.sitT += dt;
+          turnTo(b, b.fire.x, b.fire.z, dt, 4);
+          const k = Math.min(1, b.sitT / 0.8), o = {};
+          for (const c in FIRE_SIT) o[c] = FIRE_SIT[c] * k; // ease down onto the ground
+          pose = o;
+          if (b.t <= 0) { b.fire = null; next(b); } // had enough rest
+        } else if (b.state === 'walk') {
           const dx = b.tx - b.P.x, dz = b.tz - b.P.z, dist = Math.hypot(dx, dz);
           const off = turnTo(b, b.tx, b.tz, dt);
           speed = (b.run ? RUN : WALK) * (off > 0.8 ? 0.3 : 1) * 0.9;
