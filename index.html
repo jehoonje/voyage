@@ -23,6 +23,11 @@
   </div>
   <div id="place" class="hud"><b id="placeName">—</b><small id="placeBiome"></small><small id="placeFirst" hidden></small></div>
   <div id="buffs" class="hud" aria-live="polite"></div>
+  <div id="guide" class="hud" hidden>
+    <span id="guideArrow" aria-hidden="true">▲</span>
+    <div class="g-txt"><small>Goal <span id="guideStep"></span> <span id="guideDist"></span></small><b id="guideText"></b></div>
+    <button id="guideSkip" type="button" aria-label="Skip the guide">Skip</button>
+  </div>
   <div id="names" class="hud" aria-hidden="true"></div>
   <div id="online" class="hud" hidden></div>
   <button id="mapBtn" class="hud" aria-label="Open map">
@@ -90,9 +95,10 @@
 
   <div id="start">
     <div class="card">
-      <div class="eyebrow">A world without end</div>
+      <div class="eyebrow">A calm exploration game</div>
       <h1>The Unknown Continent</h1>
-      <p>Forests and jungles, deserts and snowy peaks, rivers and seas. The map fills in as you walk, and you grow with every stretch of land you reveal.</p>
+      <p class="pitch">Walk an endless continent, fill in the map, fish the rivers and rest by a campfire with other explorers.</p>
+      <div class="do3"><span><b>Explore</b>new land = XP</span><span><b>Fish</b>10 kinds to find</span><span><b>Camp</b>cook, rest, travel</span></div>
       <ul>
         <li>Drag on the left · move</li>
         <li>Drag on the right · look around</li>

@@ -225,7 +225,7 @@ body.busy #emoteBtn{opacity:.22;pointer-events:none}
 #names .name.say{background:rgba(232,177,90,.92);color:#2a1a06;font-weight:600}
 #online{top:calc(64px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);padding:3px 10px;border-radius:10px;background:rgba(12,16,18,.5);font-size:12px;color:var(--ink)}
 #placeFirst{display:block;font-size:11px;color:var(--amber)}
-#buffs{top:calc(92px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:4px;pointer-events:none}
+#buffs{top:calc(160px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:4px;pointer-events:none}
 #buffs span{align-self:flex-start;padding:3px 9px;border-radius:9px;background:rgba(232,177,90,.85);color:#2a1a06;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
 #fishMeter{left:50%;transform:translateX(-50%);bottom:calc(214px + env(safe-area-inset-bottom,0px));width:min(300px,calc(100vw - 40px));
   padding:10px 12px;border-radius:12px;background:rgba(18,24,28,.82);border:1px solid var(--panel-line)}
@@ -255,3 +255,18 @@ body.fight #ctxBtn{animation:none}
 .cr-name input{flex:1;min-width:0;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--panel-line);background:rgba(10,14,16,.55);color:var(--ink);font-size:16px;-webkit-user-select:text;user-select:text}
 #bag,#map,.dlg{z-index:25}
 #campMenu,#emoteMenu{z-index:24}
+
+/* start card pitch; the first-minute guide */
+.card .pitch{font-size:15px!important;color:var(--ink)!important}
+.do3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 0 14px}
+.do3 span{display:flex;flex-direction:column;gap:2px;padding:8px 6px;border-radius:10px;background:rgba(255,255,255,.07);font-size:11px;color:var(--ink-dim);text-align:center}
+.do3 b{font-family:var(--display);font-size:15px;color:var(--amber)}
+#guide{top:calc(92px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;
+  max-width:calc(100vw - 32px);padding:8px 10px 8px 12px;border-radius:14px;background:rgba(18,24,28,.82);border:1px solid rgba(232,177,90,.55);pointer-events:auto}
+#guide[hidden]{display:none}
+#guideArrow{display:inline-block;width:26px;height:26px;line-height:26px;text-align:center;border-radius:50%;background:#e8b15a;color:#2a1a06;font-size:13px;flex:none}
+#guide .g-txt{display:flex;flex-direction:column;min-width:0}
+#guide small{font-size:11px;color:var(--ink-dim)}
+#guide b{font-size:14px;color:var(--ink);font-weight:600}
+#guideSkip{flex:none;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--panel-line);background:transparent;color:var(--ink-dim);font-family:var(--ui);font-size:12px;cursor:pointer}
+#online{top:calc(150px + env(safe-area-inset-top,0px))}

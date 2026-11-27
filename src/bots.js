@@ -118,6 +118,19 @@ export function createBots({ scene, camera, world, count = 5 }) {
      * you lit a fire: maybe one or two bots nearby come and sit with you
      * (half the time one, a quarter of the time two, otherwise nobody)
      */
+    /** seat n bots at a fire straight away (a camp already going when you arrive); returns their names */
+    sitAt(f, n, isLit) {
+      const names = [];
+      bots.slice(0, n).forEach((b, i) => {
+        const a = (i / Math.max(1, n)) * Math.PI * 2 + 0.6;
+        b.fire = f; b.isLit = isLit; b.seat = { x: f.x + Math.sin(a) * 1.4, z: f.z + Math.cos(a) * 1.4 };
+        b.P.x = b.seat.x; b.P.z = b.seat.z; b.P.y = sample(b.P.x, b.P.z).h;
+        b.P.face = Math.atan2(f.x - b.P.x, f.z - b.P.z);
+        b.state = 'fireSit'; b.sitT = 1; b.t = 150 + Math.random() * 150; b.emote = null;
+        names.push(b.name);
+      });
+      return names;
+    },
     onFire(f, P, isLit) {
       const r = Math.random(), want = r < 0.5 ? 1 : r < 0.75 ? 2 : 0;
       const free = bots.filter((b) => !b.fire && Math.hypot(b.P.x - f.x, b.P.z - f.z) < 90)

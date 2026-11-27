@@ -33,6 +33,7 @@ import { createNet, cleanName } from './net.js';
 import { createWorldDB } from './worlddb.js';
 import { createSigns } from './signs.js';
 import { createBots } from './bots.js';
+import { createGuide } from './guide.js';
 import { COOK, buffChips } from './cooking.js';
 import { CAMP_COST, RELIGHT_COST, SIGN_COST } from './actions.js';
 
@@ -120,7 +121,7 @@ const net = createNet({ scene, camera, local: NET_LOCAL, onEvent: netEvent });
 if (NET_LOCAL) window.__net = net; // testing aid
 // bot explorers wandering about (?bots=N to change how many, 0 for none)
 const bots = createBots({ scene, camera, world, count: DEBUG.has('bots') ? Math.max(0, Math.min(12, parseInt(DEBUG.get('bots'), 10) || 0)) : 5 });
-if (NET_LOCAL) setTimeout(() => { window.__bots = bots.list; window.__botsApi = bots; window.__g = { fishing, fires, progress, actions, P }; }); // testing aid
+if (NET_LOCAL) setTimeout(() => { window.__bots = bots.list; window.__botsApi = bots; window.__g = { fishing, fires, progress, actions, P, guide }; }); // testing aid
 let myCamps = []; // { id, x, y, z, litUntil } — your camps, for travelling between them
 let placeFirst = null;
 const myName = () => progress.state.name || 'Explorer';
@@ -139,8 +140,9 @@ const inventory = createInventory(progress, {
 const actions = createActions({ P, fires, fx, progress, onPickup: (t) => inventory.flash(t), onCamp: campChanged, onSign: signPlaced });
 const fishing = createFishing({
   scene, P, hero, progress, fx, getWeather: () => weather.state, onPickup: (t) => inventory.flash(t),
-  onCatch: ({ species, cm, big }) => net.event('catch', { sp: species, cm, big }),
+  onCatch: ({ species, cm, big }) => { net.event('catch', { sp: species, cm, big }); guide.event('caught'); },
 });
+const guide = createGuide({ scene, camera, P, world, progress, onFinish: () => refreshContext() });
 const emotes = createEmotes({ onEmote: (k) => net.event('emote', { k }) });
 const input = createInput({
   onJump() { if (!actions.busy) physics.jump(P); },
@@ -152,6 +154,32 @@ const input = createInput({
 
 /** a random walkable start somewhere in the first few kilometres: forest, meadow, jungle or desert, not too steep */
 const SPAWN_BIOMES = new Set(['forest', 'meadow', 'jungle', 'desert']);
+/** a first start somewhere with something to do: gentle ground in a forest, meadow or jungle with water close by */
+function findNiceSpawn() {
+  const R = 8000, NICE = new Set(['forest', 'meadow', 'jungle']);
+  for (let i = 0; i < 2500; i++) {
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r, s = sample(x, z);
+    if (!NICE.has(biome(s)) || s.h < 0.8 || s.h > 8) continue;
+    const e = 2, gx = sample(x + e, z).h - sample(x - e, z).h, gz = sample(x, z + e).h - sample(x, z - e).h;
+    if (Math.hypot(gx, gz) / (2 * e) > 0.3) continue;
+    let water = false;
+    for (let k = 0; k < 12 && !water; k++) for (const d of [20, 40, 60]) if (sample(x + Math.sin(k * 0.52) * d, z + Math.cos(k * 0.52) * d).h < -0.9) { water = true; break; }
+    if (water) return [x, z];
+  }
+  return null;
+}
+/** a campfire a few steps away with a couple of bot explorers already sitting at it */
+function botCamp() {
+  for (let k = 0; k < 30; k++) {
+    const a = Math.random() * Math.PI * 2, d = 9 + Math.random() * 6, x = P.x + Math.sin(a) * d, z = P.z + Math.cos(a) * d, h = sample(x, z).h;
+    if (h < 0.4 || world.nearestTree(x, z, 2.5)) continue;
+    const f = fires.spawn(x, h, z, { id: 'botfire-' + Math.random().toString(36).slice(2), mine: false, ownerName: '', litUntil: serverNow() + 8 * 60000 }, true);
+    const names = bots.sitAt(f, 2, (q) => fires.isLit(q));
+    f.ownerName = names[0] || 'Someone';
+    return;
+  }
+}
 function findSpawn() {
   const R = 8000;
   for (let i = 0; i < 600; i++) {
@@ -184,7 +212,7 @@ function refreshContext() {
     nearTree = world.nearestTree(P.x, P.z, 2.8);
     nearSign = signs.nearest(P.x, P.z, 2);
     if (fishing.canFish()) { // facing open water from the bank (turn away to chop)
-      if (progress.state.lvl >= FISH_LVL) { mode = 'fish'; label = 'Fish'; }
+      if (progress.state.lvl >= FISH_LVL || guide.fishingOpen) { mode = 'fish'; label = 'Fish'; }
       else { mode = 'fishLocked'; label = `Fish · Lv.${FISH_LVL}`; }
     }
     else if ((nearFire = fires.nearest(P.x, P.z, 2.6, true)) && nearFire.mine) { mode = 'douseNear'; label = 'Put out fire'; }
@@ -308,7 +336,7 @@ async function campChanged(f, what) {
     wdb.setLit(f.id, f.litUntil);
     const c = myCamps.find((m) => m.id === f.id); if (c) c.litUntil = f.litUntil;
   }
-  if (what === 'made' || what === 'relit') bots.onFire(f, P, (q) => fires.isLit(q));
+  if (what === 'made' || what === 'relit') { bots.onFire(f, P, (q) => fires.isLit(q)); guide.event('camp'); }
   if (what === 'doused') net.event('fireOut', { id: f.id });
   else net.event('fire', { id: f.id, x: f.x, z: f.z, lu: f.litUntil });
 }
@@ -472,6 +500,7 @@ function step(now) {
   if (map.open && mag > 0) map.request();
   net.update(dt, { x: P.x, y: P.y, z: P.z, face: P.face, speed: hs, swim: P.swim, grounded: P.grounded, sitting: actions.sitting, fishing: fishing.active && fishing.state !== 'trophy' });
   bots.update(dt, P);
+  guide.update(dt);
   socialTick(dt);
   draw(now);
 }
@@ -491,7 +520,7 @@ function socialTick(dt) {
 function begin(cont) {
   const pos = cont ? progress.load() : null;
   if (pos) { P.x = pos.x; P.z = pos.z; }
-  else { [P.x, P.z] = findSpawn(); progress.reset(); }
+  else { [P.x, P.z] = findNiceSpawn() || findSpawn(); progress.reset(); progress.addItem('wood', 5); } // a little wood to start with
   // your public name: from the creator, else what you had, else a random one
   const typed = cleanName(document.getElementById('crName').value);
   if (document.getElementById('crName').value.trim()) progress.setName(typed);
@@ -499,6 +528,8 @@ function begin(cont) {
   net.setMe({ id: store.uid || 'g-' + Math.random().toString(36).slice(2, 12), name: myName(), look: hero.spec });
   net.start();
   bots.start(P);
+  if (!pos) setTimeout(botCamp, 400); // new here: someone's already got a fire going close by (once the trees are in)
+  setTimeout(() => guide.start(), 2500);
   myCamps = [];
   wdb.myCamps().then((list) => { if (list.length) myCamps = list; });
   wdb.nearby(P.x, P.z, true).then(loadNearby);

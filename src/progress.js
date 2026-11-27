@@ -29,7 +29,7 @@ export function regionName(rx, rz, b) {
 export function createProgress() {
   const $ = (id) => document.getElementById(id);
   // codex: per fish { n, best (cm), where (terrain of the first one) }; buffs: { speed|bite: { until (server ms), k } }
-  const st = { xp: 0, lvl: 1, items: {}, cells: new Set(), regions: new Set(), biomes: new Set(), codex: {}, buffs: {}, name: '' };
+  const st = { xp: 0, lvl: 1, items: {}, cells: new Set(), regions: new Set(), biomes: new Set(), codex: {}, buffs: {}, name: '', guideDone: false };
   let dirty = false, lastCell = '', lastPlace = '', perks = perksFor(st.biomes);
   const itemListeners = [], regionListeners = [];
   const refreshPerks = () => { perks = perksFor(st.biomes); itemListeners.forEach((f) => f()); };
@@ -104,6 +104,7 @@ export function createProgress() {
     /** current strength of a buff (0 if none), and ms left */
     buff(kind) { const b = st.buffs[kind]; const left = b ? b.until - serverNow() : 0; return left > 0 ? { k: b.k, left } : { k: 0, left: 0 }; },
     setName(n) { st.name = n; dirty = true; },
+    setGuideDone() { st.guideDone = true; dirty = true; },
     /** f(regionKey, name, isNewForMe) when the player walks into a region */
     onRegion(f) { regionListeners.push(f); },
     /** remove n of an item; false (and nothing removed) if there aren't enough */
@@ -123,12 +124,13 @@ export function createProgress() {
       itemListeners.forEach((f) => f());
       st.cells = new Set(s.cells); st.regions = new Set(s.regions); st.biomes = new Set(s.biomes);
       st.codex = s.codex || {}; st.buffs = s.buffs || {}; if (s.name) st.name = s.name;
+      st.guideDone = s.guideDone ?? (s.lvl >= 2); // saves from before the guide: only new-ish players get it
       refreshPerks();
       hud();
       return { x: s.x, z: s.z };
     },
     reset() {
-      st.xp = 0; st.lvl = 1; st.items = {}; st.cells.clear(); st.regions.clear(); st.biomes.clear(); st.codex = {}; st.buffs = {};
+      st.xp = 0; st.lvl = 1; st.items = {}; st.cells.clear(); st.regions.clear(); st.biomes.clear(); st.codex = {}; st.buffs = {}; st.guideDone = false;
       refreshPerks();
       dirty = true; hud();
     },
@@ -137,7 +139,7 @@ export function createProgress() {
       dirty = false;
       store.set(SAVE_KEY, {
         xp: st.xp, lvl: st.lvl, items: st.items, cells: [...st.cells], regions: [...st.regions], biomes: [...st.biomes], x: px, z: pz,
-        codex: st.codex, buffs: st.buffs, name: st.name,
+        codex: st.codex, buffs: st.buffs, name: st.name, guideDone: st.guideDone,
       });
     },
     /** reveal cells around the player, award XP, announce regions */
