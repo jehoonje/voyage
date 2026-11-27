@@ -117,7 +117,7 @@ const signs = createSigns(scene);
 const wdb = createWorldDB({ offline: NET_LOCAL });
 const net = createNet({ scene, camera, local: NET_LOCAL, onEvent: netEvent });
 if (NET_LOCAL) window.__net = net; // testing aid
-if (NET_LOCAL) setTimeout(() => { window.__g = { fishing, fires, progress, actions, P, hero }; }); // testing aid
+if (NET_LOCAL) setTimeout(() => { window.__g = { fishing, fires, progress, actions, P }; }); // testing aid
 let myCamps = []; // { id, x, y, z, litUntil } — your camps, for travelling between them
 let placeFirst = null;
 const myName = () => progress.state.name || 'Explorer';
@@ -133,12 +133,12 @@ const inventory = createInventory(progress, {
   onCook: cook,
   bitingNow: () => fishing.bitingNow(),
 });
-const actions = createActions({ P, hero, fires, fx, progress, onPickup: (t) => inventory.flash(t), onCamp: campChanged, onSign: signPlaced });
+const actions = createActions({ P, fires, fx, progress, onPickup: (t) => inventory.flash(t), onCamp: campChanged, onSign: signPlaced });
 const fishing = createFishing({
   scene, P, hero, progress, fx, getWeather: () => weather.state, onPickup: (t) => inventory.flash(t),
   onCatch: ({ species, cm, big }) => net.event('catch', { sp: species, cm, big }),
 });
-const emotes = createEmotes({ hero, onEmote: (k) => net.event('emote', { k }) });
+const emotes = createEmotes({ onEmote: (k) => net.event('emote', { k }) });
 const input = createInput({
   onJump() { if (!actions.busy) physics.jump(P); },
   onMap: () => map.toggle(),

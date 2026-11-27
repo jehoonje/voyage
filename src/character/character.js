@@ -388,8 +388,7 @@ export function createCharacter(scene) {
 
   // axe in the right hand: handle along +z, blade toward −y (as the old hero)
   const wood = new THREE.MeshLambertMaterial({ color: 0x8a5a32 }), steel = new THREE.MeshLambertMaterial({ color: 0xb9c0c6 });
-  // the axe rides in whichever hand a clip's tool track names, laid along the tool direction (see animate)
-  const axe = new THREE.Group(); axe.scale.setScalar(0.62); root.add(axe);
+  const axe = new THREE.Group(); axe.position.set(0, -0.05, 0.01); axe.scale.setScalar(0.62); J.handR.add(axe);
   const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.75, 8).rotateX(Math.PI / 2), wood); handle.position.z = 0.28; axe.add(handle);
   const blade = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.2, 0.13), steel); blade.position.set(0, -0.07, 0.6); axe.add(blade);
   axe.traverse((o) => { if (o.isMesh) o.castShadow = true; });
@@ -440,9 +439,6 @@ export function createCharacter(scene) {
   // a clip played on demand over everything else (fishing): name, time, loop, rate, and a fade weight
   let ov = null, ovT = 0, ovLoop = false, ovRate = 1, ovW = 0, ovLast = null;
   const ovQ = mk(), ovP = new THREE.Vector3(), handTmp = new THREE.Vector3();
-  // the tool held in the current clip: which hand, and its direction (model space, and world for the game)
-  let toolSide = null;
-  const toolM = new THREE.Vector3(), toolW = new THREE.Vector3(), Zp = new THREE.Vector3(0, 0, 1), Yp = new THREE.Vector3(0, 1, 0);
   const sat = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const pos = (v) => (v > 0 ? v : 0);
 
@@ -460,10 +456,8 @@ export function createCharacter(scene) {
     get clipTime() { return ovT; },
     /** has a one-shot clip reached its end */
     get clipDone() { return !!ov && !ovLoop && ovT >= MOCAP[ov].duration; },
-    /** world position of a hand ('L' = the −x hand) */
+    /** world position of a hand ('L' = the −x hand, which holds the top of a rod) */
     hand(side, out = new THREE.Vector3()) { root.updateMatrixWorld(true); return J[side === 'L' ? 'handL' : 'handR'].getWorldPosition(out); },
-    /** the tool in the playing clip: { side, dir (world, unit) } or null */
-    get tool() { return toolSide ? { side: toolSide, dir: toolW } : null; },
     apply,
     /** take this character out of the world (other players who leave) */
     dispose() { scene.remove(root); for (const m of meshes) m.material.dispose(); meshes = []; outlines = []; },
@@ -629,24 +623,8 @@ export function createCharacter(scene) {
         J.hips.position.x += (rest[0].x + ovP.x - J.hips.position.x) * ovW;
         J.hips.position.y += (rest[0].y + ovP.y - J.hips.position.y) * ovW;
         J.hips.position.z += (rest[0].z - J.hips.position.z) * ovW;
-        toolSide = null;
-        if (C.tool && ovW > 0.5) {
-          const fr = (((u % 1) + 1) % 1) * C.n, i0 = Math.floor(fr) % C.n, i1 = (i0 + 1) % C.n, a = fr - Math.floor(fr), d = C.tool.d;
-          toolM.set(d[i0 * 3] + (d[i1 * 3] - d[i0 * 3]) * a, d[i0 * 3 + 1] + (d[i1 * 3 + 1] - d[i0 * 3 + 1]) * a, d[i0 * 3 + 2] + (d[i1 * 3 + 2] - d[i0 * 3 + 2]) * a).normalize();
-          toolW.copy(toolM).applyAxisAngle(Yp, root.rotation.y);
-          toolSide = C.tool.side;
-        }
-      } else toolSide = null;
-      axe.visible = !!(target && target.axe) || ((ov === 'chop' || ov === 'hammer') && ovW > 0.5); // the axe doubles as a mallet
-      if (axe.visible) {
-        // grip in the tool hand, head out along the tool direction (handle runs along the axe's +z)
-        const side = toolSide || 'R';
-        root.updateMatrixWorld(true);
-        J[side === 'L' ? 'handL' : 'handR'].getWorldPosition(handTmp);
-        root.worldToLocal(axe.position.copy(handTmp));
-        axe.quaternion.setFromUnitVectors(Zp, toolSide ? toolM : Zp);
-        axe.position.addScaledVector(toolSide ? toolM : Zp, -0.12);
       }
+      axe.visible = !!(target && target.axe);
       // blink every few seconds
       blinkT -= dt;
       const shut = blinkT < 0.12;

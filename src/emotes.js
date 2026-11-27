@@ -1,16 +1,36 @@
-// Emotes (keys 1–4 or the Emote menu): wave, cheer and sit are KayKit clips (CC0); clap and the trophy pose
-// (a big catch held overhead) are hand-made poses on the same channels as actions.js. Other players see them via net.js.
+// Emotes (keys 1–4 or the Emote menu): wave, cheer, sit, clap. Plus the trophy pose for a big catch.
+// Poses use the same channels as actions.js; other players see them through net.js.
 const STAND = { drop: 0, back: 0, lean: 0, twist: 0, legL: 0, legR: 0, kneeL: 0.04, kneeR: 0.04, armLX: 0, armRX: 0, armLZ: -0.06, armRZ: 0.06, elbowL: -0.2, elbowR: -0.2 };
+const SIT_FLOOR = { ...STAND, drop: -0.76, back: -0.3, lean: -0.05, legL: -1.75, legR: -1.6, kneeL: 1.75, kneeR: 1.65, armLX: -0.55, armRX: -0.55, armLZ: 0.2, armRZ: -0.2, elbowL: -0.85, elbowR: -0.85 };
 const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
-/**
- * each emote: a KayKit clip (once, looped, or a lead-in then a loop) or, for clap, a hand-made pose.
- * dur: how long it lasts (0 = until you move)
- */
+/** each emote: how long it lasts (0 = until you move) and its pose at time t */
 export const EMOTES = {
-  wave: { label: 'Wave', key: 'Digit1', clip: 'wave', dur: 2.1 },
-  cheer: { label: 'Cheer', key: 'Digit2', clip: 'cheer', loop: true, dur: 3.3 },
-  sit: { label: 'Sit', key: 'Digit3', clip: 'sitDown', then: 'sitIdle', dur: 0 },
+  wave: {
+    label: 'Wave', key: 'Digit1', dur: 2.4,
+    pose: (t) => {
+      const up = ease(t / 0.35) * ease((2.4 - t) / 0.35);
+      return { ...STAND, armRX: -2.75 * up, armRZ: (0.25 + Math.sin(t * 10) * 0.38) * up, elbowR: -0.35 * up, headY: 0.15 * up, lean: -0.04 * up };
+    },
+  },
+  cheer: {
+    label: 'Cheer', key: 'Digit2', dur: 2.2,
+    pose: (t) => {
+      const up = ease(t / 0.25) * ease((2.2 - t) / 0.3), b = Math.abs(Math.sin(t * 7));
+      return { ...STAND, drop: -0.14 * b * up, kneeL: 0.04 + 0.35 * b * up, kneeR: 0.04 + 0.35 * b * up, legL: -0.15 * b * up, legR: -0.15 * b * up,
+        armLX: (-2.6 + Math.sin(t * 14) * 0.2) * up, armRX: (-2.6 - Math.sin(t * 14) * 0.2) * up, armLZ: -0.5 * up, armRZ: 0.5 * up,
+        elbowL: -0.25 * up, elbowR: -0.25 * up, lean: -0.12 * up, headX: -0.2 * up };
+    },
+  },
+  sit: {
+    label: 'Sit', key: 'Digit3', dur: 0,
+    pose: (t) => {
+      const k = ease(t / 0.7), breath = Math.sin(t * 1.4) * 0.03;
+      const o = {};
+      for (const c in SIT_FLOOR) o[c] = STAND[c] + (SIT_FLOOR[c] - STAND[c]) * k;
+      o.lean += breath; return o;
+    },
+  },
   clap: {
     label: 'Clap', key: 'Digit4', dur: 2.2,
     pose: (t) => {
@@ -19,34 +39,6 @@ export const EMOTES = {
     },
   },
 };
-
-/** plays emotes on a character (yours or another player's) */
-export function createEmoteDriver(char) {
-  let cur = null, t = 0, stage = 0;
-  const api = {
-    get current() { return cur; },
-    play(name) {
-      const e = EMOTES[name]; if (!e) return;
-      cur = name; t = 0; stage = 0;
-      char.play(e.clip || null, { loop: !!e.loop });
-    },
-    stop() {
-      if (!cur) return;
-      const e = EMOTES[cur]; cur = null;
-      if (e.clip) char.play(null);
-    },
-    /** pose for this frame (hand-made emotes), else null */
-    update(dt) {
-      if (!cur) return null;
-      t += dt;
-      const e = EMOTES[cur];
-      if (e.then && stage === 0 && char.clipDone) { stage = 1; char.play(e.then, { loop: true }); }
-      if (e.dur && t >= e.dur) { api.stop(); return null; }
-      return e.pose ? e.pose(t) : null;
-    },
-  };
-  return api;
-}
 
 /** both hands overhead holding a fish up, bouncing a little */
 export function trophyPose(t) {
@@ -58,13 +50,24 @@ export function trophyPose(t) {
 /** sitting by a fire (also used for other players sitting at one) */
 export const FIRE_SIT = { ...STAND, drop: -0.76, back: -0.3, lean: -0.1, legL: -2.0, legR: -1.9, kneeL: 1.5, kneeR: 1.45, armLX: -0.9, armRX: -0.9, armLZ: 0.1, armRZ: -0.1, elbowL: -0.55, elbowR: -0.55 };
 
-/** the player's own emotes, told to the players around */
-export function createEmotes({ hero, onEmote }) {
-  const d = createEmoteDriver(hero);
+/** the player's own emote state */
+export function createEmotes({ onEmote }) {
+  let cur = null, t = 0;
   return {
-    get current() { return d.current; },
-    play(name) { if (!EMOTES[name]) return; d.play(name); onEmote && onEmote(name); },
-    stop() { if (d.current) { d.stop(); onEmote && onEmote(null); } },
-    update(dt) { const had = d.current, pose = d.update(dt); if (had && !d.current) onEmote && onEmote(null); return pose; },
+    get current() { return cur; },
+    play(name) {
+      if (!EMOTES[name]) return;
+      cur = name; t = 0;
+      onEmote && onEmote(name);
+    },
+    stop() { if (cur) { cur = null; onEmote && onEmote(null); } },
+    /** pose for this frame, or null */
+    update(dt) {
+      if (!cur) return null;
+      t += dt;
+      const e = EMOTES[cur];
+      if (e.dur && t >= e.dur) { cur = null; return null; }
+      return e.pose(t);
+    },
   };
 }
