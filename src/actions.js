@@ -14,7 +14,7 @@ const KNEEL = { ...STAND, drop: -0.45, lean: 0.4, legL: -1.4, kneeL: 1.45, legR:
 // sitting on the ground, knees drawn up, hands out toward the fire
 const SIT = { ...STAND, drop: -0.76, back: -0.3, lean: -0.1, legL: -2.0, legR: -1.9, kneeL: 1.5, kneeR: 1.45, armLX: -0.9, armRX: -0.9, armLZ: 0.1, armRZ: -0.1, elbowL: -0.55, elbowR: -0.55 };
 const FIRE_DIST = 1.35, SWING = 0.85, SWINGS = 3, SIT_REACH = 3;
-export const CAMP_COST = 6, RELIGHT_COST = 2, SIGN_COST = 3, BURN_MIN = 15;
+export const CAMP_COST = 6, RELIGHT_COST = 2, SIGN_COST = 3, BURN_MIN = 5; // a fire burns this long, then goes out by itself and stays as a cold camp
 
 export function createActions({ P, fires, fx, progress, onPickup, onCamp, onSign }) {
   let kind = null, phase = '', t = 0, fire = null, tree = null, swings = 0, hit = false, wobT = 9;
@@ -68,6 +68,12 @@ export function createActions({ P, fires, fx, progress, onPickup, onCamp, onSign
   function endCamp() { if (kind === 'camp' && phase === 'sit') { phase = 'rise'; t = 0; } }
   /** put your own fire out, then stand */
   function douseCamp() { if (kind === 'camp' && phase === 'sit' && fire && fire.mine) { phase = 'douse'; t = 0; } }
+  /** walk up to your own burning fire and put it out (without sitting down first) */
+  function douseNear(f) {
+    if (kind || !f || !f.mine || !fires.isLit(f)) return false;
+    seat(f); fire = f; kind = 'camp'; phase = 'douse'; t = 0;
+    return true;
+  }
 
   let signText = '';
   function startSign(text) {
@@ -191,7 +197,7 @@ export function createActions({ P, fires, fx, progress, onPickup, onCamp, onSign
     get sitting() { return kind === 'camp' && phase === 'sit'; },
     /** the fire you're sitting at (or building) */
     get fire() { return kind === 'camp' ? fire : null; },
-    campOption, startCamp, endCamp, douseCamp, startChop, startSign,
+    campOption, startCamp, endCamp, douseCamp, douseNear, startChop, startSign,
     /** leave a fire without the stand-up animation (travelling away) */
     leave() { kind = null; fire = null; },
     /** advance; returns the pose to show, or null for free movement */

@@ -170,7 +170,7 @@ let started = false, last = performance.now();
 
 /* context button (chop / douse) and camp menu */
 const ctxBtn = document.getElementById('ctxBtn'), campBtn = document.getElementById('campBtn'), campMenu = document.getElementById('campMenu');
-let ctxMode = '', nearTree = null, nearSign = null, ctxTimer = 0;
+let ctxMode = '', nearTree = null, nearSign = null, nearFire = null, ctxTimer = 0;
 function refreshContext() {
   let mode = '', label = '';
   if (actions.sitting) { mode = 'stand'; label = 'Stand up'; }
@@ -184,6 +184,7 @@ function refreshContext() {
       if (progress.state.lvl >= FISH_LVL) { mode = 'fish'; label = 'Fish'; }
       else { mode = 'fishLocked'; label = `Fish · Lv.${FISH_LVL}`; }
     }
+    else if ((nearFire = fires.nearest(P.x, P.z, 2.6, true)) && nearFire.mine) { mode = 'douseNear'; label = 'Put out fire'; }
     else if (nearTree) { mode = 'chop'; label = 'Chop tree'; }
     else if (nearSign && nearSign.mine) { mode = 'unsign'; label = 'Take down my sign'; }
   }
@@ -198,6 +199,7 @@ function refreshContext() {
 function doContext() {
   const mode = ctxBtn.dataset.mode;
   if (mode === 'stand') actions.endCamp();
+  else if (mode === 'douseNear' && nearFire) actions.douseNear(nearFire);
   else if (mode === 'chop' && nearTree) actions.startChop(nearTree);
   else if (mode === 'unsign' && nearSign) takeDownSign(nearSign);
   else if (mode === 'fish') fishing.start();
