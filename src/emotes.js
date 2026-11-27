@@ -44,7 +44,7 @@ export const EMOTES = {
 export function trophyPose(t) {
   const up = ease(t / 0.4), b = Math.abs(Math.sin(t * 5.5));
   return { ...STAND, drop: -0.08 * b, kneeL: 0.04 + 0.2 * b, kneeR: 0.04 + 0.2 * b,
-    armLX: -2.85 * up, armRX: -2.85 * up, armLZ: 0.12 * up, armRZ: -0.12 * up, elbowL: -0.45 * up, elbowR: -0.45 * up, lean: -0.14 * up, headX: -0.25 * up };
+    armLX: -3.05 * up, armRX: -3.05 * up, armLZ: 0.16 * up, armRZ: -0.16 * up, elbowL: -0.05 * up, elbowR: -0.05 * up, lean: -0.06 * up, headX: -0.3 * up };
 }
 
 /** sitting by a fire (also used for other players sitting at one) */

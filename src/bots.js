@@ -140,7 +140,7 @@ export function createBots({ scene, camera, world, count = 5 }) {
       if (name !== 'wave' && name !== 'cheer') return;
       for (const b of bots) {
         const d = Math.hypot(b.P.x - P.x, b.P.z - P.z);
-        if (d < 14 && b.state !== 'emote') { b.state = 'greet'; b.t = 0.4 + Math.random() * 0.5; b.reply = name; }
+        if (d < 14 && !b.fire && b.state !== 'emote' && Math.random() < 0.55) { b.state = 'greet'; b.t = 0.4 + Math.random() * 0.8; b.reply = Math.random() < 0.8 ? 'wave' : name; } // not everyone waves back
       }
     },
     update(dt, P) {
@@ -153,7 +153,8 @@ export function createBots({ scene, camera, world, count = 5 }) {
         let pose = null, speed = 0;
         // you came close: turn and wave (once in a while, not every time)
         if (dp < GREET && !b.fire && b.state !== 'emote' && b.state !== 'greet' && performance.now() / 1000 - b.greeted > 40) {
-          b.greeted = performance.now() / 1000; b.state = 'greet'; b.t = 0.5; b.reply = 'wave';
+          b.greeted = performance.now() / 1000; // decide once per approach: about a third of them wave
+          if (Math.random() < 0.35) { b.state = 'greet'; b.t = 0.5; b.reply = 'wave'; }
         }
         if (b.fire && !b.isLit(b.fire) && b.state !== 'toFire') { b.fire = null; next(b); } // the fire's out: get up and go
         if (b.state === 'toFire') {

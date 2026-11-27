@@ -9,6 +9,7 @@ import { sample, biome } from './world.js';
 import { partOfDay } from './clock.js';
 import { trophyPose } from './emotes.js';
 
+
 /**
  * model: which mesh; tint: recolour (optional); stretch: non-uniform scale; glow: emissive
  * cm: size range; where: weight by water; near: needs this terrain close by; when: parts of day; weather
@@ -70,6 +71,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
   const meter = document.getElementById('fishMeter'), tensEl = document.getElementById('fmTension'), progEl = document.getElementById('fmProgress');
 
   let state = 'off', t = 0, biteAt = 0, nibbles = [], spot = null, catchName = null, catchCm = 0, water = 'sea', near = new Set();
+  const topBox = new THREE.Box3(); let topOff = null; // how high the character's hat reaches
   let hold = false, pull = 0, tension = 0, snapT = 0, surge = 0, surgeT = 0, fightT = 0, big = false, pose = null;
   const lo = new THREE.Vector3(), hi = new THREE.Vector3(), dir = new THREE.Vector3(), tip = new THREE.Vector3(), fp = new THREE.Vector3(), from = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
@@ -116,7 +118,7 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
     setState('off');
     rod.visible = float.visible = line.visible = false;
     for (const m of Object.values(caught)) m.visible = false;
-    meter.hidden = true; hold = false; pose = null;
+    meter.hidden = true; hold = false; pose = null; topOff = null; // measured again next time (the look may change)
     hero.play(null);
   }
 
@@ -199,6 +201,13 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
       setState('reel');
       from.copy(float.position);
       hero.play('fishReel', { rate: 2.2 });
+    },
+    /** testing aid: hold up a catch straight away */
+    debugTrophy(name = 'moonfin', cm = 70) {
+      catchName = name; catchCm = cm;
+      const m = caught[name], len = cm / 100 * 1.6, sp = SPECIES[name];
+      if (sp.stretch) m.scale.set(len * sp.stretch[0], len * sp.stretch[1], len * sp.stretch[2]); else m.scale.setScalar(len);
+      m.visible = true; setState('trophy'); hero.play(null);
     },
     /** holding the button during a fight reels in */
     setHold(on) { hold = on; },
@@ -294,7 +303,13 @@ export function createFishing({ scene, P, hero, progress, fx, getWeather, onPick
         pose = trophyPose(t);
         const m = caught[catchName];
         hero.hand('R', lo); hero.hand('L', hi);
-        m.position.copy(lo).add(hi).multiplyScalar(0.5); m.position.y += 0.08;
+        // raised over the head: the arms are short, so the fish sits just above the hat (never in the head),
+        // centred over the hands and bobbing with them
+        m.position.copy(lo).add(hi).multiplyScalar(0.5);
+        if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+        const gb = m.geometry.boundingBox, half = (gb.max.y - gb.min.y) * m.scale.y / 2;
+        if (topOff === null) { topBox.setFromObject(hero.root); topOff = topBox.max.y - hero.root.position.y; } // hat top, in the rest pose
+        m.position.y = Math.max(m.position.y, P.y + topOff) + half + 0.03 + Math.sin(t * 5.5) * 0.03;
         m.rotation.set(0, P.face + Math.PI / 2, Math.sin(now * 9) * 0.15 * Math.max(0, 1 - t / 2));
         if (t > 2.8) end();
       }
