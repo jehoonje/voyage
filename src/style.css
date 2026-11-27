@@ -254,3 +254,4 @@ body.fight #ctxBtn{animation:none}
 .cr-name{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:13px;color:var(--ink-dim)}
 .cr-name input{flex:1;min-width:0;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--panel-line);background:rgba(10,14,16,.55);color:var(--ink);font-size:16px;-webkit-user-select:text;user-select:text}
 #bag,#map,.dlg{z-index:25}
+#campMenu,#emoteMenu{z-index:24}
