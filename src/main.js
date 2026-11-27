@@ -32,6 +32,7 @@ import { createEmotes, EMOTES } from './emotes.js';
 import { createNet, cleanName } from './net.js';
 import { createWorldDB } from './worlddb.js';
 import { createSigns } from './signs.js';
+import { createBots } from './bots.js';
 import { COOK, buffChips } from './cooking.js';
 import { CAMP_COST, RELIGHT_COST, SIGN_COST } from './actions.js';
 
@@ -117,7 +118,9 @@ const signs = createSigns(scene);
 const wdb = createWorldDB({ offline: NET_LOCAL });
 const net = createNet({ scene, camera, local: NET_LOCAL, onEvent: netEvent });
 if (NET_LOCAL) window.__net = net; // testing aid
-if (NET_LOCAL) setTimeout(() => { window.__g = { fishing, fires, progress, actions, P }; }); // testing aid
+// bot explorers wandering about (?bots=N to change how many, 0 for none)
+const bots = createBots({ scene, camera, world, count: DEBUG.has('bots') ? Math.max(0, Math.min(12, parseInt(DEBUG.get('bots'), 10) || 0)) : 5 });
+if (NET_LOCAL) setTimeout(() => { window.__bots = bots.list; window.__g = { fishing, fires, progress, actions, P }; }); // testing aid
 let myCamps = []; // { id, x, y, z, litUntil } — your camps, for travelling between them
 let placeFirst = null;
 const myName = () => progress.state.name || 'Explorer';
@@ -259,6 +262,7 @@ function emote(name) {
   if (actions.busy || fishing.active || P.swim || !P.grounded) return;
   P.vx = P.vz = 0;
   emotes.play(name);
+  bots.react(name, P);
 }
 emoteMenu.addEventListener('click', (e) => { const b = e.target.closest('[data-emote]'); if (b) emote(b.dataset.emote); });
 
@@ -466,6 +470,7 @@ function step(now) {
   progress.explore(P.x, P.z);
   if (map.open && mag > 0) map.request();
   net.update(dt, { x: P.x, y: P.y, z: P.z, face: P.face, speed: hs, swim: P.swim, grounded: P.grounded, sitting: actions.sitting, fishing: fishing.active && fishing.state !== 'trophy' });
+  bots.update(dt, P);
   socialTick(dt);
   draw(now);
 }
@@ -492,6 +497,7 @@ function begin(cont) {
   else if (!progress.state.name) progress.setName('Explorer ' + (1000 + Math.floor(Math.random() * 9000)));
   net.setMe({ id: store.uid || 'g-' + Math.random().toString(36).slice(2, 12), name: myName(), look: hero.spec });
   net.start();
+  bots.start(P);
   myCamps = [];
   wdb.myCamps().then((list) => { if (list.length) myCamps = list; });
   wdb.nearby(P.x, P.z, true).then(loadNearby);
